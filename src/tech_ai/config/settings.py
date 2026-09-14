@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -258,3 +258,88 @@ class GenerationSettings:
                 maximum=0.7,
             ),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class AuthSettings:
+    """Credenciais locais do assistente HTTP."""
+
+    secret: str
+    users: tuple[tuple[str, str], ...]
+    token_ttl_seconds: int = 28_800
+    cookie_name: str = "tech_ai_session"
+
+    def __post_init__(self) -> None:
+        if len(self.secret) < 16:
+            raise ConfigurationError("TECH_AI_AUTH_SECRET deve ter ao menos 16 caracteres.")
+        if not self.users:
+            raise ConfigurationError("TECH_AI_AUTH_USERS deve ter ao menos um usuário.")
+        if self.token_ttl_seconds <= 0:
+            raise ConfigurationError("TECH_AI_AUTH_TOKEN_TTL_SECONDS deve ser maior que zero.")
+        if not self.cookie_name.strip():
+            raise ConfigurationError("TECH_AI_AUTH_COOKIE_NAME não pode ser vazio.")
+
+    def user_mapping(self) -> dict[str, str]:
+        return {username: encoded for username, encoded in self.users}
+
+    @classmethod
+    def from_environment(
+        cls,
+        environment: Mapping[str, str] | None = None,
+    ) -> AuthSettings:
+        from tech_ai.integrations.auth.password import hash_password
+
+        values = os.environ if environment is None else environment
+        secret = values.get("TECH_AI_AUTH_SECRET", "").strip()
+        cookie_name = values.get("TECH_AI_AUTH_COOKIE_NAME", "tech_ai_session").strip()
+        return cls(
+            secret=secret,
+            users=_parse_auth_users(
+                values.get("TECH_AI_AUTH_USERS", ""),
+                hash_password=hash_password,
+            ),
+            token_ttl_seconds=_positive_integer(
+                values.get("TECH_AI_AUTH_TOKEN_TTL_SECONDS", "28800"),
+                "TECH_AI_AUTH_TOKEN_TTL_SECONDS",
+            ),
+            cookie_name=cookie_name,
+        )
+
+
+def _parse_auth_users(
+    raw: str,
+    *,
+    hash_password: Callable[[str], str],
+) -> tuple[tuple[str, str], ...]:
+    entries: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for item in raw.replace(";", ",").split(","):
+        piece = item.strip()
+        if not piece:
+            continue
+        if ":" not in piece:
+            raise ConfigurationError(
+                "TECH_AI_AUTH_USERS deve usar o formato usuario:senha."
+            )
+        username, secret = piece.split(":", 1)
+        username = username.strip().casefold()
+        secret = secret.strip()
+        if not username or not secret:
+            raise ConfigurationError(
+                "TECH_AI_AUTH_USERS deve usar o formato usuario:senha."
+            )
+        if username in seen:
+            raise ConfigurationError(f"Usuário duplicado em TECH_AI_AUTH_USERS: {username}.")
+        if secret.startswith("pbkdf2$"):
+            encoded = secret
+        else:
+            if len(secret) < 8:
+                raise ConfigurationError(
+                    "Cada senha em TECH_AI_AUTH_USERS deve ter ao menos 8 caracteres."
+                )
+            encoded = hash_password(secret)
+        seen.add(username)
+        entries.append((username, encoded))
+    if not entries:
+        raise ConfigurationError("TECH_AI_AUTH_USERS deve ter ao menos um usuário.")
+    return tuple(entries)

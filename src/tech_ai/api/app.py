@@ -2,20 +2,23 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
 from tech_ai.config.dependencies import (
+    build_auth_service,
     build_knowledge_retrieval_service,
     build_medical_assistant_service,
 )
-from tech_ai.config.settings import Settings
+from tech_ai.config.settings import AuthSettings, Settings
 from tech_ai.errors import (
     AssistantError,
+    AuthenticationError,
     ConfigurationError,
     EmbeddingError,
     KnowledgeRetrievalError,
@@ -27,7 +30,9 @@ from tech_ai.errors import (
 )
 from tech_ai.integrations.translation.documents import excerpt_from_knowledge_text
 from tech_ai.models.assistant import ACADEMIC_DISCLAIMER, AssistantQuery
+from tech_ai.models.auth import AuthUser
 from tech_ai.models.knowledge import KnowledgeCitation
+from tech_ai.services.auth_service import AuthService
 from tech_ai.services.knowledge_retrieval_service import KnowledgeRetrievalService
 from tech_ai.services.medical_assistant_service import MedicalAssistantService
 
@@ -57,17 +62,56 @@ class ConsultRequest(BaseModel):
         return stripped
 
 
+class LoginRequest(BaseModel):
+    """Credenciais enviadas pela tela de acesso."""
+
+    username: str
+    password: str
+
+    @field_validator("username", "password")
+    @classmethod
+    def credentials_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Informe usuário e senha.")
+        return stripped
+
+
+def _bearer_token(header: str | None) -> str | None:
+    if header is None:
+        return None
+    scheme, _, value = header.partition(" ")
+    if scheme.lower() != "bearer" or not value.strip():
+        return None
+    return value.strip()
+
+
+def _session_cookie(response: Response, *, token: str, settings: AuthSettings) -> None:
+    response.set_cookie(
+        settings.cookie_name,
+        token,
+        httponly=True,
+        samesite="lax",
+        max_age=settings.token_ttl_seconds,
+        path="/",
+    )
+
+
 def create_app(
     *,
     settings: Settings | None = None,
+    auth_settings: AuthSettings | None = None,
     retrieval_service: KnowledgeRetrievalService | None = None,
     assistant_service: MedicalAssistantService | None = None,
+    auth_service: AuthService | None = None,
 ) -> FastAPI:
     """Monta a API e a interface estática sem conectar no import."""
 
     runtime_settings = settings or Settings.from_environment()
+    runtime_auth_settings = auth_settings or AuthSettings.from_environment()
     retrieval_holder: dict[str, KnowledgeRetrievalService] = {}
     assistant_holder: dict[str, MedicalAssistantService] = {}
+    auth = auth_service or build_auth_service(runtime_auth_settings)
     if retrieval_service is not None:
         retrieval_holder["service"] = retrieval_service
     if assistant_service is not None:
@@ -92,17 +136,65 @@ def create_app(
         assistant_holder["service"] = built
         return built
 
+    def current_user(request: Request) -> AuthUser:
+        token = request.cookies.get(runtime_auth_settings.cookie_name) or _bearer_token(
+            request.headers.get("authorization")
+        )
+        try:
+            return auth.read_session(token)
+        except AuthenticationError as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+
     app = FastAPI(
         title="Tech AI",
         summary="Assistente médico acadêmico do Tech Challenge.",
     )
 
+    @app.middleware("http")
+    async def disable_ui_cache(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        response = await call_next(request)
+        if request.url.path == "/" or request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.get("/api/health")
     def health() -> dict[str, str]:
         return {"status": "ok", "disclaimer": ACADEMIC_DISCLAIMER}
 
+    @app.post("/api/login")
+    def login(body: LoginRequest, response: Response) -> dict[str, str | int]:
+        try:
+            session = auth.login(body.username, body.password)
+        except AuthenticationError as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+        _session_cookie(response, token=session.value, settings=runtime_auth_settings)
+        return {
+            "username": session.username,
+            "expires_at": session.expires_at,
+        }
+
+    @app.post("/api/logout")
+    def logout(request: Request, response: Response) -> dict[str, str]:
+        token = request.cookies.get(runtime_auth_settings.cookie_name) or _bearer_token(
+            request.headers.get("authorization")
+        )
+        auth.logout(token)
+        response.delete_cookie(runtime_auth_settings.cookie_name, path="/")
+        return {"status": "ok"}
+
+    @app.get("/api/me")
+    def me(user: AuthUser = Depends(current_user)) -> dict[str, str]:
+        return {"username": user.username}
+
     @app.post("/api/consult")
-    def consult(body: ConsultRequest) -> dict[str, object]:
+    def consult(
+        body: ConsultRequest,
+        user: AuthUser = Depends(current_user),
+    ) -> dict[str, object]:
+        del user
         try:
             results = get_retrieval().search(
                 body.question,
@@ -134,7 +226,11 @@ def create_app(
         }
 
     @app.post("/api/ask")
-    def ask(body: ConsultRequest) -> dict[str, object]:
+    def ask(
+        body: ConsultRequest,
+        user: AuthUser = Depends(current_user),
+    ) -> dict[str, object]:
+        del user
         try:
             answer = get_assistant().answer(
                 AssistantQuery(question=body.question),

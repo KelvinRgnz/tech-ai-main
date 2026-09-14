@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from tech_ai.config.settings import (
+    AuthSettings,
     ChromaSettings,
     GenerationSettings,
     LocalEmbeddingSettings,
@@ -200,3 +201,85 @@ def test_generation_settings_reject_invalid_penalty() -> None:
 def test_generation_settings_reject_temperature_outside_range() -> None:
     with pytest.raises(ConfigurationError, match=r"entre 0\.2 e 0\.7"):
         GenerationSettings.from_environment({"TECH_AI_TEMPERATURE": "0.9"})
+
+
+def test_auth_settings_parse_users_cookie_and_ttl() -> None:
+    settings = AuthSettings.from_environment(
+        {
+            "TECH_AI_AUTH_SECRET": "test-secret-16chars",
+            "TECH_AI_AUTH_USERS": "Academic:academic123; ana:pbkdf2$1$00$00",
+            "TECH_AI_AUTH_TOKEN_TTL_SECONDS": "120",
+            "TECH_AI_AUTH_COOKIE_NAME": "session_demo",
+        }
+    )
+    mapping = settings.user_mapping()
+
+    assert settings.secret == "test-secret-16chars"
+    assert settings.token_ttl_seconds == 120
+    assert settings.cookie_name == "session_demo"
+    assert set(mapping) == {"academic", "ana"}
+    assert mapping["academic"].startswith("pbkdf2$")
+    assert mapping["ana"] == "pbkdf2$1$00$00"
+
+
+@pytest.mark.parametrize(
+    ("environment", "message"),
+    [
+        (
+            {"TECH_AI_AUTH_USERS": "academic:academic123"},
+            "TECH_AI_AUTH_SECRET",
+        ),
+        (
+            {
+                "TECH_AI_AUTH_SECRET": "test-secret-16chars",
+                "TECH_AI_AUTH_USERS": "",
+            },
+            "ao menos um usuário",
+        ),
+        (
+            {
+                "TECH_AI_AUTH_SECRET": "test-secret-16chars",
+                "TECH_AI_AUTH_USERS": "academic:curta",
+            },
+            "8 caracteres",
+        ),
+        (
+            {
+                "TECH_AI_AUTH_SECRET": "test-secret-16chars",
+                "TECH_AI_AUTH_USERS": "academic:academic123,Academic:outra-senha",
+            },
+            "duplicado",
+        ),
+        (
+            {
+                "TECH_AI_AUTH_SECRET": "test-secret-16chars",
+                "TECH_AI_AUTH_USERS": "academic:",
+            },
+            "usuario:senha",
+        ),
+    ],
+)
+def test_auth_settings_reject_invalid_environment(
+    environment: dict[str, str],
+    message: str,
+) -> None:
+    with pytest.raises(ConfigurationError, match=message):
+        AuthSettings.from_environment(environment)
+
+
+def test_auth_settings_reject_invalid_constructed_values() -> None:
+    hashed = "pbkdf2$1$00$00"
+    with pytest.raises(ConfigurationError, match="ao menos um usuário"):
+        AuthSettings(secret="test-secret-16chars", users=())
+    with pytest.raises(ConfigurationError, match="maior que zero"):
+        AuthSettings(
+            secret="test-secret-16chars",
+            users=(("academic", hashed),),
+            token_ttl_seconds=0,
+        )
+    with pytest.raises(ConfigurationError, match="COOKIE_NAME"):
+        AuthSettings(
+            secret="test-secret-16chars",
+            users=(("academic", hashed),),
+            cookie_name="  ",
+        )

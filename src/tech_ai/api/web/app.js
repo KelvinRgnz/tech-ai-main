@@ -11,6 +11,18 @@ const sendButton = document.querySelector("#send-button");
 const modeSelect = document.querySelector("#mode-select");
 const statusCopy = document.querySelector("#status-copy");
 const chips = document.querySelector("#chips");
+const authGate = document.querySelector("#auth-gate");
+const loginForm = document.querySelector("#login-form");
+const loginUsername = document.querySelector("#login-username");
+const loginPassword = document.querySelector("#login-password");
+const loginButton = document.querySelector("#login-button");
+const loginError = document.querySelector("#login-error");
+const sessionBox = document.querySelector("#session-box");
+const sessionUser = document.querySelector("#session-user");
+const logoutButton = document.querySelector("#logout-button");
+const appShell = document.querySelector(".app");
+
+let signedIn = false;
 
 function renderEmptyState() {
   transcript.innerHTML = `
@@ -113,8 +125,13 @@ function appendUser(text) {
   transcript.appendChild(bubble);
 }
 
+function setComposerEnabled(enabled) {
+  question.disabled = !enabled;
+  sendButton.disabled = !enabled;
+}
+
 function setBusy(isBusy) {
-  sendButton.disabled = isBusy;
+  sendButton.disabled = isBusy || !signedIn;
   sendButton.textContent = isBusy ? "Consultando..." : "Consultar";
   statusCopy.textContent = isBusy
     ? "Buscando evidências no conhecimento indexado."
@@ -122,14 +139,22 @@ function setBusy(isBusy) {
 }
 
 async function consult(questionText) {
+  if (!signedIn) {
+    showLogin("Entre para consultar o assistente.");
+    throw new Error("Autenticação obrigatória.");
+  }
   const mode = modeSelect.value;
   const response = await fetch(mode === "ask" ? "/api/ask" : "/api/consult", {
     method: "POST",
+    credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ question: questionText }),
   });
   const payload = await response.json();
   if (!response.ok) {
+    if (response.status === 401) {
+      showLogin("Sessão expirada. Entre novamente.");
+    }
     const detail = payload.detail;
     const message = Array.isArray(detail)
       ? detail.map((item) => item.msg || item).join(" ")
@@ -141,6 +166,10 @@ async function consult(questionText) {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (!signedIn) {
+    showLogin("Entre para consultar o assistente.");
+    return;
+  }
   const text = question.value.trim();
   if (!text) {
     return;
@@ -160,8 +189,7 @@ form.addEventListener("submit", async (event) => {
     transcript.appendChild(card);
     statusCopy.textContent = "A consulta falhou. Revise a pergunta ou o runtime.";
   } finally {
-    sendButton.disabled = false;
-    sendButton.textContent = "Consultar";
+    setBusy(false);
     transcript.lastElementChild?.scrollIntoView({ behavior: "smooth", block: "end" });
   }
 });
@@ -185,4 +213,79 @@ for (const suggestion of SUGGESTIONS) {
   chips.appendChild(chip);
 }
 
+function showLogin(message) {
+  signedIn = false;
+  document.body.classList.add("is-locked");
+  document.body.classList.remove("is-ready");
+  authGate.hidden = false;
+  sessionBox.hidden = true;
+  appShell?.setAttribute("aria-hidden", "true");
+  setComposerEnabled(false);
+  if (message) {
+    loginError.hidden = false;
+    loginError.textContent = message;
+  } else {
+    loginError.hidden = true;
+    loginError.textContent = "";
+  }
+  loginUsername.focus();
+}
+
+function showApp(username) {
+  signedIn = true;
+  document.body.classList.remove("is-locked");
+  document.body.classList.add("is-ready");
+  authGate.hidden = true;
+  sessionBox.hidden = false;
+  sessionUser.textContent = username;
+  appShell?.removeAttribute("aria-hidden");
+  loginError.hidden = true;
+  loginPassword.value = "";
+  setComposerEnabled(true);
+}
+
+async function readSession() {
+  const response = await fetch("/api/me", { credentials: "same-origin" });
+  if (!response.ok) {
+    showLogin();
+    return;
+  }
+  const payload = await response.json();
+  showApp(payload.username);
+}
+
+loginForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  loginButton.disabled = true;
+  loginError.hidden = true;
+  try {
+    const response = await fetch("/api/login", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: loginUsername.value.trim(),
+        password: loginPassword.value,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.detail || "Não foi possível entrar.");
+    }
+    showApp(payload.username);
+  } catch (error) {
+    loginError.hidden = false;
+    loginError.textContent = error.message || "Credenciais inválidas.";
+  } finally {
+    loginButton.disabled = false;
+  }
+});
+
+logoutButton.addEventListener("click", async () => {
+  await fetch("/api/logout", { method: "POST", credentials: "same-origin" });
+  showLogin();
+  loginUsername.focus();
+});
+
+readSession();
 renderEmptyState();

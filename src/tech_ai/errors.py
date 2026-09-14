@@ -35,3 +35,7 @@ class TranslationError(RuntimeError):
 
 class AssistantError(RuntimeError):
     """Indica que o assistente não conseguiu produzir uma resposta válida."""
+
+
+class AuthenticationError(RuntimeError):
+    """Indica credenciais inválidas ou sessão ausente."""

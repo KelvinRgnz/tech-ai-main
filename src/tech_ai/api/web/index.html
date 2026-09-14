@@ -4,10 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Tech AI · Assistente médico acadêmico</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=auth1" />
   </head>
-  <body>
-    <div class="app">
+  <body class="is-locked">
+    <div class="app" aria-hidden="true">
       <aside class="rail">
         <p class="eyebrow">Tech Challenge FIAP</p>
         <h1>Assistente médico acadêmico</h1>
@@ -45,6 +45,10 @@
               <option value="ask">Resposta com o modelo</option>
             </select>
           </label>
+          <div class="session" id="session-box" hidden>
+            <p class="session-user" id="session-user"></p>
+            <button type="button" class="ghost" id="logout-button">Sair</button>
+          </div>
         </header>
 
         <section class="transcript" id="transcript" aria-live="polite"></section>
@@ -57,15 +61,42 @@
             name="question"
             rows="3"
             required
+            disabled
             placeholder="Quais são os sintomas da diabetes?"
           ></textarea>
           <div class="composer-row">
             <p class="composer-hint">Enter envia · Shift+Enter quebra a linha</p>
-            <button type="submit" id="send-button">Consultar</button>
+            <button type="submit" id="send-button" disabled>Consultar</button>
           </div>
         </form>
       </main>
     </div>
-    <script src="/static/app.js" type="module"></script>
+    <section class="auth-gate" id="auth-gate" aria-modal="true" role="dialog" aria-labelledby="login-title">
+      <form class="auth-card" id="login-form">
+        <p class="eyebrow">Acesso acadêmico</p>
+        <h2 id="login-title">Entrar no assistente</h2>
+        <p class="lead">
+          A consulta ao conhecimento médico exige autenticação. Use o usuário
+          configurado no ambiente local.
+        </p>
+        <label>
+          <span>Usuário</span>
+          <input id="login-username" name="username" autocomplete="username" required />
+        </label>
+        <label>
+          <span>Senha</span>
+          <input
+            id="login-password"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            required
+          />
+        </label>
+        <p class="error" id="login-error" hidden></p>
+        <button type="submit" id="login-button">Entrar</button>
+      </form>
+    </section>
+    <script src="/static/app.js?v=auth1" type="module"></script>
   </body>
 </html>

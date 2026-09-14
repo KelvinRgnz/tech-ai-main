@@ -58,9 +58,10 @@ uv sync --dev
 Copy-Item .env.example .env
 ```
 
-Preencha `CHROMA_API_KEY` com a mesma chave usada no `tech-ingestao`. O `.env` é
-lido automaticamente. Esse ambiente permite validar o manifesto e consultar o
-Chroma Cloud sem instalar PyTorch.
+Preencha `CHROMA_API_KEY` com a mesma chave usada no `tech-ingestao` e defina
+`TECH_AI_AUTH_SECRET` e `TECH_AI_AUTH_USERS`. O `.env` é lido automaticamente.
+Esse ambiente permite validar o manifesto e consultar o Chroma Cloud sem instalar
+PyTorch.
 
 ## 2. Conectar ao Chroma Cloud
 
@@ -105,9 +106,25 @@ O manifesto padrão em [`configs/models/tech3-v3-pt-br.json`](configs/models/tec
 uv run tech-ai serve
 ```
 
-A interface sobe em `http://127.0.0.1:8080`. O modo padrão consulta o Chroma Cloud e mostra a
+A interface sobe em `http://127.0.0.1:8080`. Antes da consulta, entre com um usuário
+definido em `TECH_AI_AUTH_USERS`. O modo padrão consulta o Chroma Cloud e mostra a
 evidência mais próxima, as fontes numeradas e o aviso acadêmico. O modo com modelo usa o mesmo
 fluxo do comando `ask` e só funciona depois do extra `runtime`.
+
+## Autenticação
+
+A API HTTP protege `/api/consult`, `/api/ask` e `/api/me`. Saúde, a página e os
+arquivos estáticos permanecem públicos. O login grava um cookie HttpOnly assinado
+com HMAC; o cliente também pode enviar `Authorization: Bearer`.
+
+```powershell
+# .env
+TECH_AI_AUTH_SECRET=uma-chave-com-pelo-menos-16-caracteres
+TECH_AI_AUTH_USERS=academic:altere-esta-senha
+```
+
+Vários usuários são separados por vírgula: `ana:senha-um,bruno:senha-dois`. As
+senhas são hasheadas em memória com PBKDF2. Não versione o `.env`.
 
 ## 6. Testar apenas a recuperação semântica
 

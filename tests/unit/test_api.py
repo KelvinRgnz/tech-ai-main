@@ -6,17 +6,24 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tech_ai.api.app import build_default_app, create_app
-from tech_ai.config.settings import Settings
+from tech_ai.config.settings import AuthSettings, Settings
 from tech_ai.errors import (
     AssistantError,
     KnowledgeRetrievalError,
     KnowledgeStoreError,
     ModelRuntimeError,
 )
+from tech_ai.integrations.auth.password import hash_password
 from tech_ai.models.assistant import ACADEMIC_DISCLAIMER, AssistantAnswer
 from tech_ai.models.knowledge import KnowledgeCitation, KnowledgeSearchResult
+from tech_ai.services.auth_service import AuthService
 from tech_ai.services.knowledge_retrieval_service import KnowledgeRetrievalService
 from tech_ai.services.medical_assistant_service import MedicalAssistantService
+
+_TEST_USERNAME = "academic"
+_TEST_PASSWORD = "academic123"
+_TEST_SECRET = "test-secret-16chars"
+_TEST_PASSWORD_HASH = hash_password(_TEST_PASSWORD)
 
 
 class FakeRetrievalService:
@@ -67,20 +74,64 @@ class FakeAssistantService:
         )
 
 
+def _auth_settings() -> AuthSettings:
+    return AuthSettings(
+        secret=_TEST_SECRET,
+        users=((_TEST_USERNAME, _TEST_PASSWORD_HASH),),
+        token_ttl_seconds=3600,
+    )
+
+
+def _auth_service() -> AuthService:
+    return AuthService(
+        {_TEST_USERNAME: _TEST_PASSWORD_HASH},
+        secret=_TEST_SECRET,
+        token_ttl_seconds=3600,
+    )
+
+
+def _login(client: TestClient) -> TestClient:
+    response = client.post(
+        "/api/login",
+        json={"username": _TEST_USERNAME, "password": _TEST_PASSWORD},
+    )
+    assert response.status_code == 200
+    return client
+
+
 def _client(
     retrieval: FakeRetrievalService | None = None,
     assistant: FakeAssistantService | None = None,
+    *,
+    authenticate: bool = True,
 ) -> TestClient:
     app = create_app(
         settings=Settings(),
+        auth_settings=_auth_settings(),
+        auth_service=_auth_service(),
         retrieval_service=cast(KnowledgeRetrievalService, retrieval or FakeRetrievalService()),
         assistant_service=cast(MedicalAssistantService, assistant) if assistant else None,
     )
-    return TestClient(app)
+    client = TestClient(app)
+    if authenticate:
+        return _login(client)
+    return client
+
+
+def _lazy_client() -> TestClient:
+    return _login(
+        TestClient(
+            create_app(
+                settings=Settings(),
+                auth_settings=_auth_settings(),
+                auth_service=_auth_service(),
+            )
+        )
+    )
 
 
 def test_health_and_interface_are_available() -> None:
-    client = _client()
+    client = _client(authenticate=False)
 
     health = client.get("/api/health")
     page = client.get("/")
@@ -90,6 +141,11 @@ def test_health_and_interface_are_available() -> None:
     assert health.json()["disclaimer"] == ACADEMIC_DISCLAIMER
     assert page.status_code == 200
     assert "Assistente médico acadêmico" in page.text
+    assert "Entrar no assistente" in page.text
+    assert 'id="login-form"' in page.text
+    assert "is-locked" in page.text
+    assert "app.js?v=auth1" in page.text
+    assert page.headers.get("cache-control") == "no-store"
     assert "Quais são os sintomas da diabetes?" in page.text
     assert "Prefira perguntas em inglês" not in page.text
     assert css.status_code == 200
@@ -154,7 +210,7 @@ def test_consult_builds_retrieval_service_lazily(monkeypatch: pytest.MonkeyPatch
         "tech_ai.api.app.build_knowledge_retrieval_service",
         lambda _settings: retrieval,
     )
-    client = TestClient(create_app(settings=Settings()))
+    client = _lazy_client()
 
     response = client.post("/api/consult", json={"question": "diabetes"})
 
@@ -168,7 +224,7 @@ def test_ask_builds_assistant_and_maps_import_error(monkeypatch: pytest.MonkeyPa
         "tech_ai.api.app.build_medical_assistant_service",
         lambda _settings: assistant,
     )
-    built = TestClient(create_app(settings=Settings()))
+    built = _lazy_client()
     ok = built.post("/api/ask", json={"question": "What is diabetes?"})
 
     def fail(_settings: Settings) -> None:
@@ -178,7 +234,7 @@ def test_ask_builds_assistant_and_maps_import_error(monkeypatch: pytest.MonkeyPa
         "tech_ai.api.app.build_medical_assistant_service",
         fail,
     )
-    missing = TestClient(create_app(settings=Settings()))
+    missing = _lazy_client()
     unavailable = missing.post("/api/ask", json={"question": "What is diabetes?"})
 
     assert ok.status_code == 200
@@ -207,7 +263,99 @@ def test_ask_maps_invalid_question() -> None:
     assert response.status_code == 400
 
 
-def test_build_default_app_exposes_health() -> None:
+def test_build_default_app_exposes_health(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TECH_AI_AUTH_SECRET", _TEST_SECRET)
+    monkeypatch.setenv("TECH_AI_AUTH_USERS", f"{_TEST_USERNAME}:{_TEST_PASSWORD}")
     client = TestClient(build_default_app())
 
     assert client.get("/api/health").json()["status"] == "ok"
+
+
+def test_consult_and_me_require_authentication() -> None:
+    client = _client(authenticate=False)
+
+    consult = client.post("/api/consult", json={"question": "diabetes"})
+    me = client.get("/api/me")
+
+    assert consult.status_code == 401
+    assert me.status_code == 401
+    assert consult.json()["detail"] == "Autenticação obrigatória."
+
+
+def test_login_sets_httponly_cookie_and_exposes_current_user() -> None:
+    client = _client(authenticate=False)
+
+    response = client.post(
+        "/api/login",
+        json={"username": "Academic", "password": _TEST_PASSWORD},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["username"] == _TEST_USERNAME
+    assert "httponly" in response.headers["set-cookie"].lower()
+    assert client.get("/api/me").json() == {"username": _TEST_USERNAME}
+
+
+def test_login_rejects_invalid_credentials() -> None:
+    client = _client(authenticate=False)
+
+    response = client.post(
+        "/api/login",
+        json={"username": _TEST_USERNAME, "password": "senha-errada"},
+    )
+    blank = client.post(
+        "/api/login",
+        json={"username": "  ", "password": _TEST_PASSWORD},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Credenciais inválidas."
+    assert blank.status_code == 422
+
+
+def test_logout_revokes_session() -> None:
+    retrieval = FakeRetrievalService()
+    app = create_app(
+        settings=Settings(),
+        auth_settings=_auth_settings(),
+        auth_service=_auth_service(),
+        retrieval_service=cast(KnowledgeRetrievalService, retrieval),
+    )
+    client = _login(TestClient(app))
+    token = client.cookies.get("tech_ai_session")
+    assert token is not None
+
+    logout = client.post("/api/logout")
+    with_cookie = client.post("/api/consult", json={"question": "diabetes"})
+    with_revoked_bearer = TestClient(app).post(
+        "/api/consult",
+        json={"question": "diabetes"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert logout.status_code == 200
+    assert with_cookie.status_code == 401
+    assert with_revoked_bearer.status_code == 401
+    assert with_revoked_bearer.json()["detail"] == "Sessão encerrada."
+
+
+def test_consult_accepts_bearer_token() -> None:
+    retrieval = FakeRetrievalService()
+    app = create_app(
+        settings=Settings(),
+        auth_settings=_auth_settings(),
+        auth_service=_auth_service(),
+        retrieval_service=cast(KnowledgeRetrievalService, retrieval),
+    )
+    login_client = _login(TestClient(app))
+    token = login_client.cookies.get("tech_ai_session")
+    assert token is not None
+
+    response = TestClient(app).post(
+        "/api/consult",
+        json={"question": "diabetes"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert retrieval.queries == [("diabetes", 4)]
