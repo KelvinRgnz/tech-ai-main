@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "artifact_id": "qwen3-4b-medquad-candidate-v3-pt-br",
+  "artifact_type": "peft_adapter",
+  "artifact": {
+    "uri": "hf://mikaelkanzaki/tech3-v3-pt-br",
+    "revision": "87564cac62fe90c11b23cd3d2f2124e3d8f10118"
+  },
+  "base_model": {
+    "id": "unsloth/Qwen3-4B-Instruct-2507-unsloth-bnb-4bit",
+    "revision": "7744afa8566e264af1a92a806d8d9aae00cc7c78"
+  },
+  "tokenizer": {
+    "id": "unsloth/Qwen3-4B-Instruct-2507-unsloth-bnb-4bit",
+    "revision": "7744afa8566e264af1a92a806d8d9aae00cc7c78"
+  },
+  "provenance": {
+    "producer": "tech-fine-tuning",
+    "producer_commit": "4212a031d961c99427d27034327f1dc4fb6ffd2a",
+    "dataset_manifest_sha256": "91f1be1f0a7511714f55b1a6c75c6e30e3ad05068e35e04216a9427cb69925d9"
+  }
+}

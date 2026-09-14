@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tech AI · Assistente médico acadêmico</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="rail">
+        <p class="eyebrow">Tech Challenge FIAP</p>
+        <h1>Assistente médico acadêmico</h1>
+        <p class="lead">
+          Consulta o MedQuAD indexado no Chroma Cloud e devolve evidências com
+          procedência. Não realiza diagnóstico nem substitui avaliação clínica.
+        </p>
+        <section class="notice" aria-label="Aviso de uso">
+          <strong>Uso acadêmico</strong>
+          <p>
+            Conteúdo experimental para fins acadêmicos; não substitui avaliação
+            médica.
+          </p>
+        </section>
+        <section>
+          <h2>Como perguntar</h2>
+          <ul class="hints">
+            <li>Pergunte em português; as evidências do MedQuAD são traduzidas na resposta.</li>
+            <li>Cada resposta lista fontes numeradas e a distância semântica.</li>
+            <li>O modo com modelo exige o extra <code>runtime</code>.</li>
+          </ul>
+        </section>
+      </aside>
+
+      <main class="clinic">
+        <header class="clinic-bar">
+          <div>
+            <p class="status-label">Sala de consulta</p>
+            <p class="status-copy" id="status-copy">Pronto para uma pergunta.</p>
+          </div>
+          <label class="mode">
+            <span>Modo</span>
+            <select id="mode-select">
+              <option value="consult" selected>Evidências do MedQuAD</option>
+              <option value="ask">Resposta com o modelo</option>
+            </select>
+          </label>
+        </header>
+
+        <section class="transcript" id="transcript" aria-live="polite"></section>
+
+        <form class="composer" id="consult-form">
+          <div class="chips" id="chips"></div>
+          <label class="sr-only" for="question">Pergunta médica</label>
+          <textarea
+            id="question"
+            name="question"
+            rows="3"
+            required
+            placeholder="Quais são os sintomas da diabetes?"
+          ></textarea>
+          <div class="composer-row">
+            <p class="composer-hint">Enter envia · Shift+Enter quebra a linha</p>
+            <button type="submit" id="send-button">Consultar</button>
+          </div>
+        </form>
+      </main>
+    </div>
+    <script src="/static/app.js" type="module"></script>
+  </body>
+</html>
