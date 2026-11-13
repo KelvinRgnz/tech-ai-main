@@ -80,6 +80,7 @@ body.is-locked .app {
 
 .notice,
 .answer-card,
+.attachment-card,
 .source-card,
 .composer,
 .empty-card {
@@ -101,6 +102,61 @@ body.is-locked .app {
 .notice p,
 .hints {
   margin: 0;
+}
+
+.patient-panel {
+  margin-bottom: 28px;
+}
+
+.patient-field,
+.patient-form {
+  display: grid;
+  gap: 7px;
+  color: #e4ddd0;
+  font-size: 0.82rem;
+}
+
+.patient-field select,
+.patient-form input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  background: rgba(255, 253, 248, 0.1);
+  color: #fffdf8;
+  padding: 10px 11px;
+  font: inherit;
+}
+
+.patient-field select option {
+  color: var(--ink);
+}
+
+.patient-form {
+  margin-top: 14px;
+}
+
+.patient-create-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.patient-form button {
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 12px;
+  background: var(--sand);
+  color: var(--teal-deep);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.patient-feedback {
+  min-height: 1.2em;
+  margin: 0;
+  color: var(--sand);
+  font-size: 0.76rem;
 }
 
 .rail h2 {
@@ -129,6 +185,8 @@ body.is-locked .app {
   align-items: end;
   padding: 22px 28px 16px;
   flex-wrap: wrap;
+  width: min(100%, 1100px);
+  margin: 0 auto;
 }
 
 .status-label {
@@ -178,6 +236,8 @@ textarea {
   display: grid;
   align-content: start;
   gap: 16px;
+  width: min(100%, 1100px);
+  margin: 0 auto;
 }
 
 .empty-card,
@@ -208,6 +268,7 @@ textarea {
 }
 
 .answer-card,
+.attachment-card,
 .source-card {
   border: 1px solid var(--line);
   border-radius: 20px;
@@ -215,6 +276,88 @@ textarea {
 
 .answer-card {
   padding: 22px 22px 16px;
+}
+
+.attachment-card {
+  padding: 18px;
+  justify-self: start;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.attachment-card h3 {
+  margin: 14px 0 4px;
+}
+
+.attachment-card h4 {
+  margin: 12px 0 6px;
+  color: var(--muted);
+}
+
+.attachment-card ul {
+  margin: 0 0 12px;
+  padding-left: 20px;
+}
+
+.attachment-size,
+.attachment-feedback {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.attachment-preview,
+.attachment-media,
+.attachment-document {
+  display: block;
+  width: min(100%, 520px);
+  max-height: 340px;
+  margin: 12px 0;
+  border-radius: 14px;
+  background: #e9e4d9;
+  object-fit: contain;
+}
+
+.attachment-document {
+  height: 340px;
+  border: 1px solid var(--line);
+}
+
+.attachment-feedback {
+  min-height: 1.2em;
+  margin: 8px 0 0 54px;
+}
+
+.composer-input-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: end;
+}
+
+.attachment-button {
+  width: 44px;
+  height: 44px;
+  margin-bottom: 2px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--teal);
+  font-size: 1.6rem;
+  cursor: pointer;
+}
+
+.attachment-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.retry-button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--teal);
+  cursor: pointer;
 }
 
 .meta-row,
@@ -244,6 +387,11 @@ textarea {
 .badge.warn {
   background: #f8ead4;
   color: var(--warn);
+}
+
+.badge.interview {
+  background: #e5edf8;
+  color: #315f89;
 }
 
 .answer-card h3,
@@ -294,7 +442,9 @@ textarea {
 }
 
 .composer {
-  margin: 0 28px 24px;
+  width: calc(100% - 56px);
+  max-width: 1044px;
+  margin: 0 auto 24px;
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: 22px;

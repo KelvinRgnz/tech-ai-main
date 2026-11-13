@@ -33,3 +33,6 @@ evaluation/
 *.gguf
 *.eval.jsonl
 
+# Arquivos enviados por pacientes fictícios ficam apenas no armazenamento local.
+.data/
+

@@ -197,3 +197,58 @@ uv run pytest
 
 O contexto estruturado de pacientes poderá entrar em fatias posteriores, sem alterar o núcleo
 RAG já testado. A interface HTTP do assistente já consulta essa mesma recuperação.
+
+## PostgreSQL da aplicação (Supabase)
+
+Configure `TECH_AI_DATABASE_URL` no `.env` local com a URI do Session pooler. Codifique caracteres especiais da senha para URL. A variável é privada do backend; não use a chave publicável como senha do banco.
+
+Execute `uv run tech-ai check-db` para validar uma conexão TLS com `SELECT 1` em transação somente-leitura. O comando exige TLS, limita conexão e consulta e omite detalhes privados dos erros. `sslmode=require` exige criptografia, mas não equivale a validar a identidade do servidor com `verify-full`.
+
+Para criar as tabelas de pacientes e conversas, execute na pasta do projeto:
+
+```powershell
+uv run tech-ai migrate-db
+```
+
+A migração 1 cria o schema `tech_ai`, as tabelas `patients`, `conversations` e
+`schema_migrations`. A migração 2 cria `messages` para o histórico das conversas. A migração 3
+cria `attachments` e `analyses` para os metadados e o estado do processamento multimodal. A
+migração 4 acrescenta documentos PDF às modalidades aceitas. O comando usa uma transação e
+tenta adquirir uma trava sem aguardar indefinidamente. Permissões do
+schema são configuradas apenas na criação inicial. Repetir o comando após sucesso não recria as
+tabelas. A API não executa migrações no startup.
+
+Endpoints autenticados disponíveis (também em `/docs`):
+
+| Método e rota | Comportamento |
+| --- | --- |
+| `POST /api/patients` | Recebe `{"display_name": "Paciente fictício A"}` e cria paciente/conversa juntos |
+| `GET /api/patients?limit=50&offset=0` | Lista somente pacientes do usuário da sessão |
+| `GET /api/patients/{id}/conversation` | Retorna o paciente e seu `conversation_id` estável; 404 se não pertencer ao usuário |
+| `GET /api/patients/{id}/messages` | Carrega o histórico somente para o proprietário autenticado |
+| `POST /api/patients/{id}/attachments?filename=...` | Recebe um arquivo no corpo, valida e cria a análise pendente |
+| `GET /api/patients/{id}/attachments` | Lista anexos e resultados do paciente autorizado |
+| `POST /api/patients/{id}/attachments/{anexo}/process` | Executa o processador simulado local |
+| `GET /api/patients/{id}/attachments/{anexo}/content` | Entrega o arquivo somente ao proprietário autorizado |
+
+IDs são gerados no servidor. O cliente não pode escolher proprietário ou registrar
+`fictional=false`. O nome tem até 120 caracteres. A paginação aceita até 100 registros.
+Os horários são enviados com fuso UTC. O schema é privado, com RLS habilitada e sem
+políticas de acesso público nas tabelas de pacientes/conversas. A conexão administrativa
+usada nesta POC pode ignorar RLS: o isolamento entre usuários é feito pelas consultas
+parametrizadas do backend. Não exponha esse schema pela API pública do Supabase.
+
+O chat permite criar e selecionar pacientes. Consultas que informam `patient_id` registram a
+pergunta e a resposta, e a interface restaura o histórico ao recarregar ou trocar de paciente.
+Pedidos genéricos iniciam uma entrevista curta antes da busca. A interface consulta
+`GET /api/capabilities` e desabilita o modo com modelo quando o runtime opcional não estiver
+instalado.
+
+O botão **+** aceita PDF (até 25 MiB), JPEG/PNG (até 10 MiB), WAV/MP3 (até 25 MiB) e MP4
+(até 100 MiB). O backend compara extensão, MIME declarado e assinatura do conteúdo, calcula SHA-256
+e gera a chave interna; o nome original é apenas apresentação. Os arquivos ficam em
+`TECH_AI_ATTACHMENT_DIR` (padrão `.data/attachments`) e somente os metadados ficam no Supabase.
+O processador desta etapa é explicitamente simulado, não extrai conteúdo clínico e não consome
+serviços Azure. O RAG existente continua independente do banco.
+Os testes usam repositório em memória e driver simulado; não substituem a validação da migração
+e da persistência no PostgreSQL real.

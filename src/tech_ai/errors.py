@@ -1,6 +1,30 @@
 """Erros estáveis apresentados pelo runtime do tech-ai."""
 
 
+class DatabaseConnectionError(RuntimeError):
+    """Falha de conexão sem detalhes privados do driver."""
+
+
+class PatientNotFoundError(LookupError):
+    """Paciente inexistente ou pertencente a outro usuário."""
+
+
+class PatientValidationError(ValueError):
+    """Dados de paciente inválidos."""
+
+
+class AttachmentNotFoundError(LookupError):
+    """Anexo inexistente ou fora do escopo do usuário/paciente."""
+
+
+class AttachmentValidationError(ValueError):
+    """Arquivo incompatível, vazio ou acima dos limites permitidos."""
+
+
+class AttachmentStorageError(RuntimeError):
+    """Falha sanitizada ao gravar ou recuperar o arquivo local."""
+
+
 class ConfigurationError(ValueError):
     """Indica uma configuração ausente ou inválida."""
 

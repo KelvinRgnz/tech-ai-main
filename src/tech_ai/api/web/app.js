@@ -21,16 +21,22 @@ const sessionBox = document.querySelector("#session-box");
 const sessionUser = document.querySelector("#session-user");
 const logoutButton = document.querySelector("#logout-button");
 const appShell = document.querySelector(".app");
+const patientSelect = document.querySelector("#patient-select");
+const patientForm = document.querySelector("#patient-form");
+const patientName = document.querySelector("#patient-name");
+const patientCreateButton = document.querySelector("#patient-create-button");
+const patientFeedback = document.querySelector("#patient-feedback");
+const attachmentButton = document.querySelector("#attachment-button");
+const attachmentInput = document.querySelector("#attachment-input");
+const attachmentFeedback = document.querySelector("#attachment-feedback");
 
 let signedIn = false;
+let activePatient = null;
 
-function renderEmptyState() {
+function renderEmptyState(message = "Selecione ou cadastre um paciente fictício para iniciar.") {
   transcript.innerHTML = `
     <article class="empty-card">
-      <p>
-        Faça uma pergunta clínica objetiva. O assistente recupera trechos do
-        MedQuAD, mostra a resposta mais próxima e lista as fontes usadas.
-      </p>
+      <p>${escapeHtml(message)}</p>
     </article>
   `;
 }
@@ -98,6 +104,7 @@ function renderAssistant(payload) {
   const first = sources[0] ? parseEvidence(sources[0].text || "") : null;
   const answer = payload.answer || first?.answer || "Não encontrei evidências suficientemente relacionadas.";
   const grounded = payload.grounded !== false && sources.length > 0;
+  const interview = payload.mode === "interview";
   const warnings = (payload.warnings || [])
     .map((item) => `<li>${escapeHtml(item)}</li>`)
     .join("");
@@ -105,14 +112,19 @@ function renderAssistant(payload) {
   card.className = "bubble answer-card";
   card.innerHTML = `
     <div class="meta-row">
-      <span class="badge ${grounded ? "ok" : "warn"}">${grounded ? "Fundamentado em fontes" : "Sem evidência suficiente"}</span>
+      <span class="badge ${grounded ? "ok" : interview ? "interview" : "warn"}">${
+        grounded
+          ? "Fundamentado em fontes"
+          : interview
+            ? "Precisamos de mais detalhes"
+            : "Sem evidência suficiente"
+      }</span>
       <span class="distance">${escapeHtml(payload.model || "MedQuAD / Chroma Cloud")}</span>
     </div>
-    <h3>Orientação acadêmica</h3>
+    <h3>${interview ? "Vamos entender melhor" : "Orientação acadêmica"}</h3>
     <p>${escapeHtml(answer)}</p>
     ${warnings ? `<ul class="warnings">${warnings}</ul>` : ""}
-    <h3>Fontes</h3>
-    <div class="sources">${renderSources(sources, citations)}</div>
+    ${interview ? "" : `<h3>Fontes</h3><div class="sources">${renderSources(sources, citations)}</div>`}
     <p class="disclaimer">${escapeHtml(payload.disclaimer || "")}</p>
   `;
   transcript.appendChild(card);
@@ -125,17 +137,85 @@ function appendUser(text) {
   transcript.appendChild(bubble);
 }
 
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
+function attachmentPreview(attachment) {
+  const url = `/api/patients/${activePatient.id}/attachments/${attachment.id}/content`;
+  if (attachment.modality === "document") {
+    return `<object class="attachment-document" data="${url}" type="application/pdf">
+      <a href="${url}" target="_blank" rel="noreferrer">Abrir PDF</a>
+    </object>`;
+  }
+  if (attachment.modality === "image") {
+    return `<img class="attachment-preview" src="${url}" alt="Prévia de ${escapeHtml(attachment.original_name)}" />`;
+  }
+  if (attachment.modality === "audio") {
+    return `<audio class="attachment-media" controls preload="metadata" src="${url}"></audio>`;
+  }
+  return `<video class="attachment-media" controls preload="metadata" src="${url}"></video>`;
+}
+
+function renderAttachment(attachment) {
+  const analysis = attachment.analysis;
+  const completed = analysis.status === "completed";
+  const failed = analysis.status === "failed";
+  const statusLabel = completed
+    ? "Simulação concluída"
+    : failed
+      ? "Falha no processamento"
+      : "Aguardando processamento";
+  const observations = (analysis.observations || [])
+    .map((item) => `<li>${escapeHtml(item)}</li>`)
+    .join("");
+  const limitations = (analysis.limitations || [])
+    .map((item) => `<li>${escapeHtml(item)}</li>`)
+    .join("");
+  const retry = failed
+    ? `<button type="button" class="retry-button" data-retry-id="${attachment.id}">Tentar novamente</button>`
+    : "";
+  const card = document.createElement("article");
+  card.className = "bubble attachment-card";
+  card.dataset.attachmentId = attachment.id;
+  card.innerHTML = `
+    <div class="meta-row">
+      <span class="badge ${completed ? "ok" : failed ? "warn" : "interview"}">${statusLabel}</span>
+      <span class="distance">${escapeHtml(attachment.modality.toUpperCase())}</span>
+    </div>
+    <h3>${escapeHtml(attachment.original_name)}</h3>
+    <p class="attachment-size">${formatBytes(attachment.size_bytes)} · ${escapeHtml(attachment.content_type)}</p>
+    ${attachmentPreview(attachment)}
+    ${analysis.summary ? `<p>${escapeHtml(analysis.summary)}</p>` : ""}
+    ${observations ? `<h4>Observações</h4><ul>${observations}</ul>` : ""}
+    ${limitations ? `<h4>Limitações</h4><ul class="warnings">${limitations}</ul>` : ""}
+    ${retry}
+  `;
+  const existing = transcript.querySelector(`[data-attachment-id="${attachment.id}"]`);
+  if (existing) existing.replaceWith(card);
+  else transcript.appendChild(card);
+  card.querySelector("[data-retry-id]")?.addEventListener("click", () => {
+    processAttachment(attachment.id).catch(showAttachmentError);
+  });
+}
+
 function setComposerEnabled(enabled) {
-  question.disabled = !enabled;
-  sendButton.disabled = !enabled;
+  const available = enabled && signedIn && Boolean(activePatient);
+  question.disabled = !available;
+  sendButton.disabled = !available;
+  attachmentButton.disabled = !available;
 }
 
 function setBusy(isBusy) {
-  sendButton.disabled = isBusy || !signedIn;
+  sendButton.disabled = isBusy || !signedIn || !activePatient;
   sendButton.textContent = isBusy ? "Consultando..." : "Consultar";
   statusCopy.textContent = isBusy
     ? "Buscando evidências no conhecimento indexado."
-    : "Pronto para uma pergunta.";
+    : activePatient
+      ? `Conversa de ${activePatient.display_name}.`
+      : "Selecione um paciente.";
 }
 
 async function consult(questionText) {
@@ -143,12 +223,15 @@ async function consult(questionText) {
     showLogin("Entre para consultar o assistente.");
     throw new Error("Autenticação obrigatória.");
   }
+  if (!activePatient) {
+    throw new Error("Selecione um paciente para registrar a conversa.");
+  }
   const mode = modeSelect.value;
   const response = await fetch(mode === "ask" ? "/api/ask" : "/api/consult", {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question: questionText }),
+    body: JSON.stringify({ question: questionText, patient_id: activePatient.id }),
   });
   const payload = await response.json();
   if (!response.ok) {
@@ -159,6 +242,11 @@ async function consult(questionText) {
     const message = Array.isArray(detail)
       ? detail.map((item) => item.msg || item).join(" ")
       : detail;
+    if (String(message).includes("Extras de runtime")) {
+      throw new Error(
+        "O modo com modelo não está disponível nesta instalação. Use Evidências do MedQuAD."
+      );
+    }
     throw new Error(message || "Não foi possível concluir a consulta.");
   }
   return payload;
@@ -194,6 +282,197 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
+async function requestJson(url, options = {}) {
+  const response = await fetch(url, { credentials: "same-origin", ...options });
+  const payload = await response.json();
+  if (!response.ok) {
+    if (response.status === 401) {
+      showLogin("Sessão expirada. Entre novamente.");
+    }
+    const detail = payload.detail;
+    const message = Array.isArray(detail)
+      ? detail.map((item) => item.msg || item).join(" ")
+      : detail;
+    throw new Error(message || "A operação não pôde ser concluída.");
+  }
+  return payload;
+}
+
+async function configureCapabilities() {
+  const capabilities = await requestJson("/api/capabilities");
+  const askOption = modeSelect.querySelector('option[value="ask"]');
+  askOption.disabled = !capabilities.assistant_runtime;
+  askOption.textContent = capabilities.assistant_runtime
+    ? "Resposta com o modelo"
+    : "Resposta com o modelo (runtime não instalado)";
+  if (!capabilities.assistant_runtime && modeSelect.value === "ask") {
+    modeSelect.value = "consult";
+  }
+}
+
+function renderHistory(messages) {
+  transcript.innerHTML = "";
+  if (!messages.length) {
+    renderEmptyState(
+      `Conversa de ${activePatient.display_name}. Faça a primeira pergunta clínica.`
+    );
+    return;
+  }
+  for (const message of messages) {
+    if (message.role === "user") {
+      appendUser(message.content);
+    } else if (message.payload) {
+      renderAssistant(message.payload);
+    } else {
+      renderAssistant({ answer: message.content, grounded: false, sources: [] });
+    }
+  }
+}
+
+function renderConversation(messages, attachments) {
+  transcript.innerHTML = "";
+  if (!messages.length && !attachments.length) {
+    renderEmptyState(
+      `Conversa de ${activePatient.display_name}. Faça a primeira pergunta ou anexe um arquivo.`
+    );
+    return;
+  }
+  for (const message of messages) {
+    if (message.role === "user") appendUser(message.content);
+    else if (message.payload) renderAssistant(message.payload);
+    else renderAssistant({ answer: message.content, grounded: false, sources: [] });
+  }
+  for (const attachment of attachments) renderAttachment(attachment);
+}
+
+async function selectPatient(patient) {
+  activePatient = patient;
+  patientSelect.value = patient.id;
+  setComposerEnabled(true);
+  statusCopy.textContent = `Carregando conversa de ${patient.display_name}...`;
+  try {
+    const [messages, attachments] = await Promise.all([
+      requestJson(`/api/patients/${patient.id}/messages`),
+      requestJson(`/api/patients/${patient.id}/attachments`),
+    ]);
+    renderConversation(messages, attachments);
+    statusCopy.textContent = `Conversa de ${patient.display_name}.`;
+  } catch (error) {
+    activePatient = null;
+    setComposerEnabled(false);
+    renderEmptyState(error.message);
+    statusCopy.textContent = "Não foi possível carregar a conversa.";
+  }
+}
+
+async function loadPatients(preferredId = null) {
+  const patients = await requestJson("/api/patients");
+  patientSelect.innerHTML = "";
+  if (!patients.length) {
+    activePatient = null;
+    patientSelect.disabled = true;
+    patientSelect.add(new Option("Nenhum paciente cadastrado", ""));
+    setComposerEnabled(false);
+    renderEmptyState();
+    statusCopy.textContent = "Cadastre um paciente fictício para começar.";
+    return;
+  }
+  patientSelect.disabled = false;
+  for (const patient of patients) {
+    patientSelect.add(new Option(patient.display_name, patient.id));
+  }
+  const selected = patients.find((patient) => patient.id === preferredId) || patients[0];
+  await selectPatient(selected);
+}
+
+patientSelect.addEventListener("change", async () => {
+  if (!patientSelect.value) return;
+  const patients = await requestJson("/api/patients");
+  const selected = patients.find((patient) => patient.id === patientSelect.value);
+  if (selected) await selectPatient(selected);
+});
+
+patientForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const displayName = patientName.value.trim();
+  if (!displayName) return;
+  patientCreateButton.disabled = true;
+  patientFeedback.textContent = "Criando paciente...";
+  try {
+    const patient = await requestJson("/api/patients", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ display_name: displayName }),
+    });
+    patientName.value = "";
+    patientFeedback.textContent = "Paciente criado.";
+    await loadPatients(patient.id);
+  } catch (error) {
+    patientFeedback.textContent = error.message;
+  } finally {
+    patientCreateButton.disabled = false;
+  }
+});
+
+function declaredType(file) {
+  if (file.type) return file.type;
+  const extension = file.name.toLowerCase().split(".").pop();
+  return {
+    pdf: "application/pdf",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    wav: "audio/wav",
+    mp3: "audio/mpeg",
+    mp4: "video/mp4",
+  }[extension] || "application/octet-stream";
+}
+
+function showAttachmentError(error) {
+  attachmentFeedback.textContent = error.message || "Não foi possível anexar o arquivo.";
+  statusCopy.textContent = "O anexo não foi processado.";
+}
+
+async function processAttachment(attachmentId) {
+  attachmentFeedback.textContent = "Processando com o simulador local...";
+  const processed = await requestJson(
+    `/api/patients/${activePatient.id}/attachments/${attachmentId}/process`,
+    { method: "POST" }
+  );
+  renderAttachment(processed);
+  attachmentFeedback.textContent = "Simulação concluída; nenhum serviço Azure foi consumido.";
+  statusCopy.textContent = `Conversa de ${activePatient.display_name}.`;
+}
+
+attachmentButton.addEventListener("click", () => attachmentInput.click());
+
+attachmentInput.addEventListener("change", async () => {
+  const file = attachmentInput.files?.[0];
+  attachmentInput.value = "";
+  if (!file || !activePatient) return;
+  if (transcript.querySelector(".empty-card")) transcript.innerHTML = "";
+  attachmentButton.disabled = true;
+  attachmentFeedback.textContent = `Enviando ${file.name}...`;
+  statusCopy.textContent = "Validando e armazenando o anexo.";
+  try {
+    const uploaded = await requestJson(
+      `/api/patients/${activePatient.id}/attachments?filename=${encodeURIComponent(file.name)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": declaredType(file) },
+        body: file,
+      }
+    );
+    renderAttachment(uploaded);
+    await processAttachment(uploaded.id);
+    transcript.lastElementChild?.scrollIntoView({ behavior: "smooth", block: "end" });
+  } catch (error) {
+    showAttachmentError(error);
+  } finally {
+    attachmentButton.disabled = !signedIn || !activePatient;
+  }
+});
+
 question.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();
@@ -215,6 +494,7 @@ for (const suggestion of SUGGESTIONS) {
 
 function showLogin(message) {
   signedIn = false;
+  activePatient = null;
   document.body.classList.add("is-locked");
   document.body.classList.remove("is-ready");
   authGate.hidden = false;
@@ -241,7 +521,17 @@ function showApp(username) {
   appShell?.removeAttribute("aria-hidden");
   loginError.hidden = true;
   loginPassword.value = "";
-  setComposerEnabled(true);
+  setComposerEnabled(false);
+  loadPatients().catch((error) => {
+    patientFeedback.textContent = error.message;
+    renderEmptyState("Não foi possível carregar os pacientes.");
+  });
+  configureCapabilities().catch(() => {
+    const askOption = modeSelect.querySelector('option[value="ask"]');
+    askOption.disabled = true;
+    askOption.textContent = "Resposta com o modelo (indisponível)";
+    modeSelect.value = "consult";
+  });
 }
 
 async function readSession() {

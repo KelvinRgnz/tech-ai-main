@@ -12,6 +12,7 @@ from tech_ai.config.settings import Settings, load_project_environment
 from tech_ai.errors import (
     AssistantError,
     ConfigurationError,
+    DatabaseConnectionError,
     EmbeddingError,
     KnowledgeRetrievalError,
     KnowledgeStoreError,
@@ -30,6 +31,8 @@ def _build_parser(settings: Settings) -> argparse.ArgumentParser:
         description="Consome o modelo médico pronto do Tech Challenge.",
     )
     subcommands = parser.add_subparsers(dest="command", required=True)
+    subcommands.add_parser("check-db", help="Verifica PostgreSQL sem alterar dados.")
+    subcommands.add_parser("migrate-db", help="Aplica migrações da persistência PostgreSQL.")
     inspect_parser = subcommands.add_parser(
         "inspect-model",
         help="Valida e exibe o manifesto de um modelo publicado.",
@@ -98,6 +101,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         settings = Settings.from_environment()
         parser = _build_parser(settings)
         arguments = parser.parse_args(argv)
+        if arguments.command == "migrate-db":
+            from tech_ai.services.database_service import initialize_database
+
+            applied = initialize_database()
+            if applied:
+                versions = ", ".join(str(version) for version in applied)
+                print(f"Migrações aplicadas: {versions}.")
+            else:
+                print("Banco já atualizado.")
+            return 0
+        if arguments.command == "check-db":
+            from tech_ai.services.database_service import check_database
+
+            check_database()
+            print("PostgreSQL: conexão TLS e consulta somente-leitura verificadas.")
+            return 0
         if arguments.command == "inspect-model":
             artifact = inspect_model_artifact(arguments.manifest)
             print(artifact.to_json())
@@ -153,6 +172,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (
         AssistantError,
         ConfigurationError,
+        DatabaseConnectionError,
         EmbeddingError,
         KnowledgeRetrievalError,
         KnowledgeStoreError,

@@ -2,44 +2,61 @@
 
 from __future__ import annotations
 
+import importlib.util
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Literal
+from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
+from tech_ai.api.attachments import attachment_router
+from tech_ai.api.conversations import conversation_router
+from tech_ai.api.patients import patient_router
 from tech_ai.config.dependencies import (
+    build_attachment_service,
     build_auth_service,
+    build_conversation_service,
     build_knowledge_retrieval_service,
     build_medical_assistant_service,
+    build_patient_service,
 )
 from tech_ai.config.settings import AuthSettings, Settings
 from tech_ai.errors import (
     AssistantError,
     AuthenticationError,
     ConfigurationError,
+    DatabaseConnectionError,
     EmbeddingError,
     KnowledgeRetrievalError,
     KnowledgeStoreError,
     ModelArtifactReadError,
     ModelArtifactValidationError,
     ModelRuntimeError,
+    PatientNotFoundError,
+    PatientValidationError,
     TranslationError,
 )
 from tech_ai.integrations.translation.documents import excerpt_from_knowledge_text
 from tech_ai.models.assistant import ACADEMIC_DISCLAIMER, AssistantQuery
 from tech_ai.models.auth import AuthUser
 from tech_ai.models.knowledge import KnowledgeCitation
+from tech_ai.services.attachment_service import AttachmentService
 from tech_ai.services.auth_service import AuthService
+from tech_ai.services.clinical_interview import CLARIFICATION_ANSWER, needs_clarification
+from tech_ai.services.conversation_service import ConversationService
 from tech_ai.services.knowledge_retrieval_service import KnowledgeRetrievalService
 from tech_ai.services.medical_assistant_service import MedicalAssistantService
+from tech_ai.services.patient_service import PatientService
 
 _WEB_DIR = Path(__file__).resolve().parent / "web"
 _NO_EVIDENCE_ANSWER = (
     "Não encontrei evidências suficientemente relacionadas na base de conhecimento "
-    "para responder com segurança."
+    "para responder com segurança. Tente informar o sintoma principal, quando começou, "
+    "a intensidade e outros sinais associados."
 )
 _RUNTIME_UNAVAILABLE = (
     "O runtime do modelo não está instalado. Use a consulta de evidências ou "
@@ -52,6 +69,7 @@ class ConsultRequest(BaseModel):
 
     question: str
     limit: int | None = Field(default=None, gt=0, le=20)
+    patient_id: UUID | None = None
 
     @field_validator("question")
     @classmethod
@@ -97,6 +115,29 @@ def _session_cookie(response: Response, *, token: str, settings: AuthSettings) -
     )
 
 
+def _assistant_runtime_available() -> bool:
+    return all(
+        importlib.util.find_spec(module) is not None
+        for module in ("torch", "transformers", "peft", "bitsandbytes")
+    )
+
+
+def _interview_payload(question: str) -> dict[str, object]:
+    return {
+        "question": question,
+        "mode": "interview",
+        "answer": CLARIFICATION_ANSWER,
+        "grounded": False,
+        "sources": [],
+        "citations": [],
+        "model": "Entrevista inicial",
+        "warnings": [
+            "A base de conhecimento ainda não foi consultada; faltam detalhes do relato."
+        ],
+        "disclaimer": ACADEMIC_DISCLAIMER,
+    }
+
+
 def create_app(
     *,
     settings: Settings | None = None,
@@ -104,6 +145,9 @@ def create_app(
     retrieval_service: KnowledgeRetrievalService | None = None,
     assistant_service: MedicalAssistantService | None = None,
     auth_service: AuthService | None = None,
+    patient_service: PatientService | None = None,
+    conversation_service: ConversationService | None = None,
+    attachment_service: AttachmentService | None = None,
 ) -> FastAPI:
     """Monta a API e a interface estática sem conectar no import."""
 
@@ -145,9 +189,44 @@ def create_app(
         except AuthenticationError as error:
             raise HTTPException(status_code=401, detail=str(error)) from error
 
+    def get_conversations() -> ConversationService:
+        return conversation_service or build_conversation_service()
+
+    def append_message(
+        user: AuthUser,
+        patient_id: UUID | None,
+        *,
+        role: Literal["user", "assistant"],
+        content: str,
+        payload: dict[str, object] | None = None,
+    ) -> None:
+        if patient_id is None:
+            return
+        try:
+            get_conversations().append(
+                user.username,
+                patient_id,
+                role=role,
+                content=content,
+                payload=payload,
+            )
+        except PatientNotFoundError:
+            raise HTTPException(404, "Paciente não encontrado.") from None
+        except PatientValidationError as error:
+            raise HTTPException(422, str(error)) from None
+        except (ConfigurationError, DatabaseConnectionError):
+            raise HTTPException(503, "Não foi possível registrar a conversa.") from None
+
     app = FastAPI(
         title="Tech AI",
         summary="Assistente médico acadêmico do Tech Challenge.",
+    )
+    app.include_router(
+        patient_router(current_user, lambda: patient_service or build_patient_service())
+    )
+    app.include_router(conversation_router(current_user, get_conversations))
+    app.include_router(
+        attachment_router(current_user, lambda: attachment_service or build_attachment_service())
     )
 
     @app.middleware("http")
@@ -163,6 +242,10 @@ def create_app(
     @app.get("/api/health")
     def health() -> dict[str, str]:
         return {"status": "ok", "disclaimer": ACADEMIC_DISCLAIMER}
+
+    @app.get("/api/capabilities")
+    def capabilities() -> dict[str, bool]:
+        return {"assistant_runtime": _assistant_runtime_available()}
 
     @app.post("/api/login")
     def login(body: LoginRequest, response: Response) -> dict[str, str | int]:
@@ -194,7 +277,17 @@ def create_app(
         body: ConsultRequest,
         user: AuthUser = Depends(current_user),
     ) -> dict[str, object]:
-        del user
+        append_message(user, body.patient_id, role="user", content=body.question)
+        if needs_clarification(body.question):
+            interview_payload = _interview_payload(body.question)
+            append_message(
+                user,
+                body.patient_id,
+                role="assistant",
+                content=CLARIFICATION_ANSWER,
+                payload=interview_payload,
+            )
+            return interview_payload
         try:
             results = get_retrieval().search(
                 body.question,
@@ -215,7 +308,7 @@ def create_app(
             for number, result in enumerate(results, start=1)
         ]
         excerpt = excerpt_from_knowledge_text(results[0].text) if results else None
-        return {
+        payload: dict[str, object] = {
             "question": body.question,
             "mode": "evidence",
             "answer": excerpt or _NO_EVIDENCE_ANSWER,
@@ -224,13 +317,31 @@ def create_app(
             "citations": citations,
             "disclaimer": ACADEMIC_DISCLAIMER,
         }
+        append_message(
+            user,
+            body.patient_id,
+            role="assistant",
+            content=str(payload["answer"]),
+            payload=payload,
+        )
+        return payload
 
     @app.post("/api/ask")
     def ask(
         body: ConsultRequest,
         user: AuthUser = Depends(current_user),
     ) -> dict[str, object]:
-        del user
+        append_message(user, body.patient_id, role="user", content=body.question)
+        if needs_clarification(body.question):
+            interview_payload = _interview_payload(body.question)
+            append_message(
+                user,
+                body.patient_id,
+                role="assistant",
+                content=CLARIFICATION_ANSWER,
+                payload=interview_payload,
+            )
+            return interview_payload
         try:
             answer = get_assistant().answer(
                 AssistantQuery(question=body.question),
@@ -253,6 +364,13 @@ def create_app(
             raise HTTPException(status_code=503, detail=str(error)) from error
         payload = answer.as_dict()
         payload["mode"] = "assistant"
+        append_message(
+            user,
+            body.patient_id,
+            role="assistant",
+            content=answer.answer,
+            payload=payload,
+        )
         return payload
 
     @app.get("/")

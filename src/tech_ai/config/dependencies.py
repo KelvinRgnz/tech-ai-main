@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from tech_ai.config.attachments import AttachmentSettings
+from tech_ai.config.database import DatabaseSettings
 from tech_ai.config.settings import (
     AuthSettings,
     ChromaSettings,
@@ -12,11 +14,33 @@ from tech_ai.config.settings import (
 from tech_ai.integrations.chroma.knowledge_repository import ChromaKnowledgeRepository
 from tech_ai.integrations.embeddings.local_onnx import LocalOnnxEmbeddingClient
 from tech_ai.integrations.llm.huggingface import HuggingFaceLlmClient
+from tech_ai.integrations.local_attachment_storage import LocalAttachmentStorage
+from tech_ai.integrations.postgres_attachments import PostgresAttachmentRepository
+from tech_ai.integrations.postgres_conversations import PostgresConversationRepository
+from tech_ai.integrations.postgres_patients import PostgresPatientRepository
 from tech_ai.integrations.translation.mymemory import MyMemoryTranslationClient
+from tech_ai.services.attachment_service import AttachmentService
 from tech_ai.services.auth_service import AuthService
+from tech_ai.services.conversation_service import ConversationService
 from tech_ai.services.knowledge_retrieval_service import KnowledgeRetrievalService
 from tech_ai.services.medical_assistant_service import MedicalAssistantService
 from tech_ai.services.model_artifact_service import inspect_model_artifact
+from tech_ai.services.patient_service import PatientService
+
+
+def build_patient_service() -> PatientService:
+    return PatientService(PostgresPatientRepository(DatabaseSettings.from_environment()))
+
+
+def build_attachment_service() -> AttachmentService:
+    return AttachmentService(
+        PostgresAttachmentRepository(DatabaseSettings.from_environment()),
+        LocalAttachmentStorage(AttachmentSettings.from_environment().storage_dir),
+    )
+
+
+def build_conversation_service() -> ConversationService:
+    return ConversationService(PostgresConversationRepository(DatabaseSettings.from_environment()))
 
 
 def build_knowledge_retrieval_service(

@@ -1,0 +1,233 @@
+"""Validação, persistência e processamento simulado de anexos."""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterable
+from contextlib import suppress
+from datetime import UTC, datetime
+from pathlib import Path
+from uuid import UUID, uuid4
+
+from tech_ai.errors import (
+    AttachmentNotFoundError,
+    AttachmentStorageError,
+    AttachmentValidationError,
+    PatientNotFoundError,
+)
+from tech_ai.models.attachment import (
+    AttachmentAnalysis,
+    AttachmentModality,
+    AttachmentView,
+    StoredAttachment,
+)
+from tech_ai.repositories.attachment_repository import AttachmentRepository, AttachmentStorage
+
+_MEBIBYTE = 1024 * 1024
+_MAX_BYTES = {
+    "document": 25 * _MEBIBYTE,
+    "image": 10 * _MEBIBYTE,
+    "audio": 25 * _MEBIBYTE,
+    "video": 100 * _MEBIBYTE,
+}
+_EXTENSIONS: dict[str, tuple[AttachmentModality, str]] = {
+    ".pdf": ("document", "application/pdf"),
+    ".jpg": ("image", "image/jpeg"),
+    ".jpeg": ("image", "image/jpeg"),
+    ".png": ("image", "image/png"),
+    ".wav": ("audio", "audio/wav"),
+    ".mp3": ("audio", "audio/mpeg"),
+    ".mp4": ("video", "video/mp4"),
+}
+_DECLARED_TYPES = {
+    "application/pdf": "application/pdf",
+    "image/jpeg": "image/jpeg",
+    "image/png": "image/png",
+    "audio/wav": "audio/wav",
+    "audio/x-wav": "audio/wav",
+    "audio/mpeg": "audio/mpeg",
+    "audio/mp3": "audio/mpeg",
+    "video/mp4": "video/mp4",
+}
+
+
+class AttachmentService:
+    def __init__(self, repository: AttachmentRepository, storage: AttachmentStorage) -> None:
+        self._repository = repository
+        self._storage = storage
+
+    async def upload(
+        self,
+        owner: str,
+        patient_id: UUID,
+        *,
+        original_name: str,
+        declared_content_type: str,
+        chunks: AsyncIterable[bytes],
+    ) -> AttachmentView:
+        name, extension, expected_modality, expected_type = self._validate_metadata(
+            original_name, declared_content_type
+        )
+        temporary = await self._storage.write_temporary(
+            chunks, max_bytes=_MAX_BYTES[expected_modality]
+        )
+        try:
+            detected_modality, detected_type = _detect_content(temporary.header)
+            if (detected_modality, detected_type) != (expected_modality, expected_type):
+                raise AttachmentValidationError(
+                    "A extensão, o tipo declarado e o conteúdo real do arquivo não coincidem."
+                )
+            attachment_id = uuid4()
+            analysis_id = uuid4()
+            now = datetime.now(UTC)
+            storage_key = f"{attachment_id.hex[:2]}/{attachment_id}{extension}"
+            analysis = AttachmentAnalysis(
+                analysis_id,
+                "pending",
+                "simulated-multimodal-processor",
+                "1.0",
+                0,
+                None,
+                (),
+                ("Processamento ainda não iniciado.",),
+                None,
+                now,
+                None,
+                None,
+            )
+            attachment = StoredAttachment(
+                attachment_id,
+                UUID(int=0),
+                name,
+                storage_key,
+                temporary.sha256,
+                detected_modality,
+                detected_type,
+                temporary.size_bytes,
+                now,
+                analysis,
+            )
+            self._storage.promote(temporary, storage_key=storage_key)
+            try:
+                created = self._repository.create(owner, patient_id, attachment)
+            except Exception:
+                with suppress(AttachmentStorageError):
+                    self._storage.remove(storage_key)
+                raise
+            if not created:
+                self._storage.remove(storage_key)
+                raise PatientNotFoundError("Paciente não encontrado.")
+            return AttachmentView.from_stored(attachment)
+        except Exception:
+            temporary.path.unlink(missing_ok=True)
+            raise
+
+    def list_for_patient(self, owner: str, patient_id: UUID) -> tuple[AttachmentView, ...]:
+        attachments = self._repository.list_for_patient(owner, patient_id)
+        if attachments is None:
+            raise PatientNotFoundError("Paciente não encontrado.")
+        return tuple(AttachmentView.from_stored(item) for item in attachments)
+
+    def process_simulated(
+        self, owner: str, patient_id: UUID, attachment_id: UUID
+    ) -> AttachmentView:
+        attachment = self._get(owner, patient_id, attachment_id)
+        if attachment.analysis.status == "completed":
+            return AttachmentView.from_stored(attachment)
+        now = datetime.now(UTC)
+        modality_label = {
+            "document": "Documento PDF",
+            "image": "Imagem",
+            "audio": "Áudio",
+            "video": "Vídeo",
+        }[attachment.modality]
+        analysis = AttachmentAnalysis(
+            attachment.analysis.id,
+            "completed",
+            "simulated-multimodal-processor",
+            "1.0",
+            attachment.analysis.attempt + 1,
+            f"{modality_label} recebido e validado para o fluxo acadêmico.",
+            (
+                f"Formato confirmado: {attachment.content_type}.",
+                f"Tamanho recebido: {attachment.size_bytes} bytes.",
+            ),
+            (
+                "Resultado simulado: nenhum conteúdo clínico foi extraído.",
+                "A integração Azure ainda não foi acionada.",
+            ),
+            None,
+            attachment.analysis.created_at,
+            now,
+            now,
+        )
+        if not self._repository.complete_analysis(
+            owner, patient_id, attachment_id, analysis
+        ):
+            raise AttachmentNotFoundError("Anexo não encontrado.")
+        return AttachmentView.from_stored(
+            StoredAttachment(
+                attachment.id,
+                attachment.conversation_id,
+                attachment.original_name,
+                attachment.storage_key,
+                attachment.sha256,
+                attachment.modality,
+                attachment.content_type,
+                attachment.size_bytes,
+                attachment.created_at,
+                analysis,
+            )
+        )
+
+    def content(self, owner: str, patient_id: UUID, attachment_id: UUID) -> tuple[Path, str, str]:
+        attachment = self._get(owner, patient_id, attachment_id)
+        return (
+            self._storage.resolve(attachment.storage_key),
+            attachment.content_type,
+            attachment.original_name,
+        )
+
+    def _get(self, owner: str, patient_id: UUID, attachment_id: UUID) -> StoredAttachment:
+        attachment = self._repository.get(owner, patient_id, attachment_id)
+        if attachment is None:
+            raise AttachmentNotFoundError("Anexo não encontrado.")
+        return attachment
+
+    @staticmethod
+    def _validate_metadata(
+        original_name: str, declared_content_type: str
+    ) -> tuple[str, str, AttachmentModality, str]:
+        name = original_name.strip()
+        if not name or len(name) > 255 or any(char in name for char in ("/", "\\", "\0")):
+            raise AttachmentValidationError("Nome de arquivo inválido.")
+        extension = Path(name).suffix.lower()
+        expected = _EXTENSIONS.get(extension)
+        if expected is None:
+            raise AttachmentValidationError(
+                "Formato não aceito. Use PDF, JPEG, PNG, WAV, MP3 ou MP4."
+            )
+        declared = declared_content_type.split(";", 1)[0].strip().lower()
+        normalized_declared = _DECLARED_TYPES.get(declared)
+        if normalized_declared != expected[1]:
+            raise AttachmentValidationError(
+                "O tipo declarado não corresponde à extensão do arquivo."
+            )
+        return name, extension, expected[0], expected[1]
+
+
+def _detect_content(header: bytes) -> tuple[AttachmentModality, str]:
+    if header.startswith(b"%PDF-"):
+        return "document", "application/pdf"
+    if header.startswith(b"\xff\xd8\xff"):
+        return "image", "image/jpeg"
+    if header.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image", "image/png"
+    if len(header) >= 12 and header[:4] == b"RIFF" and header[8:12] == b"WAVE":
+        return "audio", "audio/wav"
+    if header.startswith(b"ID3") or (
+        len(header) >= 2 and header[0] == 0xFF and header[1] & 0xE0 == 0xE0
+    ):
+        return "audio", "audio/mpeg"
+    if len(header) >= 12 and header[4:8] == b"ftyp":
+        return "video", "video/mp4"
+    raise AttachmentValidationError("O conteúdo do arquivo não corresponde a um formato aceito.")

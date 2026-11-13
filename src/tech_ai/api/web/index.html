@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Tech AI · Assistente médico acadêmico</title>
-    <link rel="stylesheet" href="/static/styles.css?v=auth1" />
+    <link rel="stylesheet" href="/static/styles.css?v=documents1" />
   </head>
   <body class="is-locked">
     <div class="app" aria-hidden="true">
@@ -21,6 +21,29 @@
             Conteúdo experimental para fins acadêmicos; não substitui avaliação
             médica.
           </p>
+        </section>
+        <section class="patient-panel" aria-labelledby="patient-title">
+          <h2 id="patient-title">Paciente da conversa</h2>
+          <label class="patient-field" for="patient-select">
+            <span>Selecionar paciente fictício</span>
+            <select id="patient-select" disabled>
+              <option value="">Nenhum paciente cadastrado</option>
+            </select>
+          </label>
+          <form id="patient-form" class="patient-form">
+            <label for="patient-name">Novo paciente fictício</label>
+            <div class="patient-create-row">
+              <input
+                id="patient-name"
+                maxlength="120"
+                placeholder="Ex.: Paciente A"
+                autocomplete="off"
+                required
+              />
+              <button type="submit" id="patient-create-button">Criar</button>
+            </div>
+            <p class="patient-feedback" id="patient-feedback" aria-live="polite"></p>
+          </form>
         </section>
         <section>
           <h2>Como perguntar</h2>
@@ -42,7 +65,7 @@
             <span>Modo</span>
             <select id="mode-select">
               <option value="consult" selected>Evidências do MedQuAD</option>
-              <option value="ask">Resposta com o modelo</option>
+              <option value="ask" disabled>Resposta com o modelo (verificando...)</option>
             </select>
           </label>
           <div class="session" id="session-box" hidden>
@@ -56,14 +79,31 @@
         <form class="composer" id="consult-form">
           <div class="chips" id="chips"></div>
           <label class="sr-only" for="question">Pergunta médica</label>
-          <textarea
-            id="question"
-            name="question"
-            rows="3"
-            required
-            disabled
-            placeholder="Quais são os sintomas da diabetes?"
-          ></textarea>
+          <div class="composer-input-row">
+            <button
+              type="button"
+              class="attachment-button"
+              id="attachment-button"
+              title="Anexar PDF, imagem, áudio ou vídeo"
+              aria-label="Anexar arquivo"
+              disabled
+            >+</button>
+            <input
+              id="attachment-input"
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png,.wav,.mp3,.mp4,application/pdf,image/jpeg,image/png,audio/wav,audio/mpeg,video/mp4"
+              hidden
+            />
+            <textarea
+              id="question"
+              name="question"
+              rows="3"
+              required
+              disabled
+              placeholder="Quais são os sintomas da diabetes?"
+            ></textarea>
+          </div>
+          <p class="attachment-feedback" id="attachment-feedback" aria-live="polite"></p>
           <div class="composer-row">
             <p class="composer-hint">Enter envia · Shift+Enter quebra a linha</p>
             <button type="submit" id="send-button" disabled>Consultar</button>
@@ -97,6 +137,6 @@
         <button type="submit" id="login-button">Entrar</button>
       </form>
     </section>
-    <script src="/static/app.js?v=auth1" type="module"></script>
+    <script src="/static/app.js?v=documents1" type="module"></script>
   </body>
 </html>
