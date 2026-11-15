@@ -72,3 +72,40 @@ def test_check_speech_uses_fictitious_audio_without_exposing_key(
     assert payload["transcript"] == "Relato fictício transcrito."
     assert "private-test-key" not in output
     assert calls[0][1] == "audio/wav"
+
+
+def test_check_speech_can_keep_fictitious_audio(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    class FakeTranscriber:
+        def __init__(self, **_configuration: object) -> None:
+            pass
+
+        def transcribe(self, path: Path, *, content_type: str) -> SpeechTranscript:
+            assert path.is_file()
+            assert content_type == "audio/wav"
+            return SpeechTranscript("Teste.", "pt-BR", 1.0, ())
+
+    def synthesize(path: Path, **_configuration: object) -> None:
+        path.write_bytes(b"RIFF-test-WAVE")
+
+    monkeypatch.setenv("TECH_AI_AZURE_SPEECH_ENABLED", "true")
+    monkeypatch.setenv("TECH_AI_AZURE_SPEECH_KEY", "private-test-key")
+    monkeypatch.setenv("TECH_AI_AZURE_SPEECH_REGION", "brazilsouth")
+    monkeypatch.setattr(
+        "tech_ai.integrations.speech.azure.AzureSpeechTranscriber",
+        FakeTranscriber,
+    )
+    monkeypatch.setattr(
+        "tech_ai.integrations.speech.azure.synthesize_fictitious_audio",
+        synthesize,
+    )
+    output_path = tmp_path / "samples" / "relato.wav"
+
+    assert main(["check-speech", "--output", str(output_path)]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert output_path.is_file()
+    assert payload["audio_file"] == str(output_path.resolve())

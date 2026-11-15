@@ -97,7 +97,7 @@ Depende da etapa 0; deve preceder testes com serviços reais.
 - [x] Configurar credenciais por ambiente, sem incluí-las no Git, no navegador ou nos logs.
 - [x] Criar clientes intercambiáveis: simulado para desenvolvimento e Azure para integração.
 - [x] Configurar limites locais de duração, volume de arquivos e concorrência.
-- [ ] Registrar chamadas e reutilizar resultados por arquivo/configuração/versão do processador.
+- [x] Registrar chamadas e reutilizar resultados por arquivo/configuração/versão do processador.
 - [x] Configurar alertas de orçamento e um procedimento para interromper o processamento pago.
 - [x] Documentar que alertas de orçamento não equivalem, por si só, a bloqueio automático de gastos.
 
@@ -135,7 +135,15 @@ Depende das etapas 1 e 2.
 - [ ] Usar Azure Text Analytics para termos críticos e sentimentos no texto transcrito.
 - [ ] Definir uma abordagem experimental adicional para alterações vocais; pausas e sentimento textual, isoladamente, não validam detecção de fadiga ou dificuldade respiratória.
 - [ ] Comparar os eventos detectados com anotações manuais das gravações.
-- [ ] Exibir transcrição e relatório com instantes verificáveis no áudio.
+- [x] Exibir transcrição e relatório com instantes verificáveis no áudio.
+
+**Validação integrada em 15/11/2026:** um WAV fictício de 12,23 s foi gerado pelo comando de
+diagnóstico, anexado pelo botão **+** e transcrito pelo Azure Speech em `pt-BR`. A interface exibiu
+a transcrição, 24 palavras temporizadas, uma pausa estimada de pelo menos 0,8 s e o maior intervalo
+estimado de 2,2 s, além das limitações experimentais. O resultado persistiu após recarregar a
+página e permaneceu associado somente ao paciente de origem durante as trocas de paciente. O
+processamento repetido reutiliza o resultado persistido. A detecção direta de silêncio no sinal,
+os cenários com ruído e múltiplos falantes e o Azure Text Analytics continuam pendentes.
 
 **Concluída quando:** a transcrição e os eventos temporais são demonstráveis, os serviços Azure exigidos estão integrados e a cobertura de alterações vocais está explicitamente avaliada ou registrada como limitação pendente.
 
@@ -225,7 +233,9 @@ Depende das etapas anteriores.
 
 ## 6. Próxima tarefa e acompanhamento
 
-**Próxima tarefa:** aplicar e validar a migração 1 no Supabase; depois integrar seleção de paciente e histórico ao chat, antes do upload e processamento simulado.
+**Próxima tarefa:** provisionar e integrar o Azure AI Language F0 para extrair termos relevantes e
+sentimento da transcrição, mantendo cache, limites de consumo e as ressalvas de que sentimento e
+pausas não constituem diagnóstico clínico.
 
 Para cada tarefa implementada, registrar:
 

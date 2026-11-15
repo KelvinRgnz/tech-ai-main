@@ -44,6 +44,11 @@ def _build_parser(settings: Settings) -> argparse.ArgumentParser:
         type=Path,
         help="WAV ou MP3 local; sem a opção, gera um WAV fictício pelo próprio Speech F0.",
     )
+    speech_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Mantém o WAV fictício gerado neste caminho; não pode ser usado com --audio.",
+    )
     inspect_parser = subcommands.add_parser(
         "inspect-model",
         help="Valida e exibe o manifesto de um modelo publicado.",
@@ -145,9 +150,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                 max_concurrent_requests=azure.max_concurrent_requests,
             )
             if arguments.audio is not None:
+                if arguments.output is not None:
+                    raise ConfigurationError("Use apenas --audio ou --output, não ambos.")
                 audio_path = arguments.audio
                 content_type = _audio_content_type(audio_path)
                 transcript = transcriber.transcribe(audio_path, content_type=content_type)
+                saved_audio: Path | None = None
+            elif arguments.output is not None:
+                audio_path = _new_wav_output(arguments.output)
+                audio_path.parent.mkdir(parents=True, exist_ok=True)
+                synthesize_fictitious_audio(
+                    audio_path,
+                    key=azure.speech_key,
+                    region=azure.speech_region,
+                )
+                transcript = transcriber.transcribe(
+                    audio_path,
+                    content_type="audio/wav",
+                )
+                saved_audio = audio_path.resolve()
             else:
                 temporary_root = Path(".pytest-tmp")
                 temporary_root.mkdir(exist_ok=True)
@@ -164,16 +185,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                         audio_path,
                         content_type="audio/wav",
                     )
+                saved_audio = None
+            payload: dict[str, object] = {
+                "status": "ok",
+                "data": "fictícia" if arguments.audio is None else "arquivo local",
+                "language": transcript.language,
+                "duration_seconds": round(transcript.duration_seconds, 2),
+                "words_with_timing": len(transcript.words),
+                "transcript": transcript.text,
+            }
+            if saved_audio is not None:
+                payload["audio_file"] = str(saved_audio)
             print(
                 json.dumps(
-                    {
-                        "status": "ok",
-                        "data": "fictícia" if arguments.audio is None else "arquivo local",
-                        "language": transcript.language,
-                        "duration_seconds": round(transcript.duration_seconds, 2),
-                        "words_with_timing": len(transcript.words),
-                        "transcript": transcript.text,
-                    },
+                    payload,
                     ensure_ascii=False,
                     indent=2,
                     sort_keys=True,
@@ -259,3 +284,11 @@ def _audio_content_type(path: Path) -> str:
     if extension == ".mp3":
         return "audio/mpeg"
     raise ConfigurationError("O diagnóstico aceita apenas arquivos WAV ou MP3.")
+
+
+def _new_wav_output(path: Path) -> Path:
+    if path.suffix.casefold() != ".wav":
+        raise ConfigurationError("O arquivo de saída deve usar a extensão .wav.")
+    if path.exists():
+        raise ConfigurationError("O arquivo de saída já existe; escolha outro caminho.")
+    return path

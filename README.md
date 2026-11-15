@@ -274,5 +274,14 @@ o transcreve. Ele realiza duas operações pequenas no Speech F0 e não imprime 
 ```powershell
 uv run --no-sync --no-cache tech-ai check-speech
 ```
+
+Para manter o WAV fictício e anexá-lo pelo botão **+** do chat:
+
+```powershell
+uv run --no-sync --no-cache tech-ai check-speech --output .data/samples/relato-ficticio.wav
+```
+
+O diretório `.data/` é local e ignorado pelo Git. Por segurança, o comando não sobrescreve um
+arquivo existente.
 Consulte [`docs/azure-poc-plan.md`](docs/azure-poc-plan.md) para serviços, faixas gratuitas,
 controle de custos, variáveis e sequência de provisionamento.
