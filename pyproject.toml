@@ -26,6 +26,12 @@ azure = [
   "azure-cognitiveservices-speech>=1.47,<2",
   "imageio-ffmpeg>=0.6,<1",
 ]
+# Estimativa de pose local para o vídeo de fisioterapia da demonstração.
+video = [
+  "mediapipe>=1.2.3,<2",
+  # Declarado explicitamente porque o MediaPipe o utiliza para decodificar MP4.
+  "opencv-contrib-python>=5,<6",
+]
 # Runtime pesado de inferência local. A busca no ChromaDB e os testes não
 # precisam baixar PyTorch nem os pesos do modelo.
 runtime = [
@@ -93,6 +99,8 @@ module = [
   "bitsandbytes.*",
   "chromadb.*",
   "peft.*",
+  "cv2.*",
+  "mediapipe.*",
   "torch.*",
   "transformers.*",
   "uvicorn.*",
@@ -110,6 +118,8 @@ omit = [
   "src/tech_ai/integrations/speech/conversion.py",
   "src/tech_ai/integrations/language/azure.py",
   "src/tech_ai/integrations/documents/azure.py",
+  # Exige OpenCV, MediaPipe e o bundle binário oficial; regras temporais ficam cobertas.
+  "src/tech_ai/integrations/video/mediapipe.py",
 ]
 
 [tool.coverage.report]

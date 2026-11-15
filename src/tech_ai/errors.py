@@ -37,6 +37,10 @@ class DocumentOcrError(RuntimeError):
     """Falha sanitizada ao extrair texto de um documento."""
 
 
+class VideoAnalysisError(RuntimeError):
+    """Falha sanitizada ao analisar movimentos em um vídeo."""
+
+
 class ConfigurationError(ValueError):
     """Indica uma configuração ausente ou inválida."""
 

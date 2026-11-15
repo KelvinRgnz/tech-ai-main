@@ -184,17 +184,29 @@ silêncio no sinal e os cenários com ruído e múltiplos falantes continuam pen
 
 Depende da etapa 1.
 
-- [ ] Definir protocolo de gravação do exercício de levantar e sentar: câmera fixa, corpo visível e condições de enquadramento.
-- [ ] Gravar exemplos encenados e anotar manualmente repetições e eventos esperados.
-- [ ] Selecionar modelo de estimativa de pose; avaliar OpenPose ou alternativa e justificar a escolha. O PDF apresenta modelos como exemplos.
-- [ ] Extrair pontos corporais e tratar frames sem detecção confiável.
-- [ ] Identificar fases do movimento e contar repetições.
-- [ ] Medir tempos e interrupções; definir critérios experimentais de desvio adequados ao enquadramento.
-- [ ] Gerar relatório com eventos, instantes, medidas e limitações.
-- [ ] Mostrar trechos ou frames que permitam verificar os achados.
-- [ ] Avaliar como o fluxo cobre padrões de movimentação; registrar que exercício gravado não demonstra monitoramento contínuo durante internação.
+- [x] Definir protocolo de gravação do exercício de levantar e sentar: câmera fixa, corpo visível e condições de enquadramento.
+- [x] Gravar exemplo encenado e anotar manualmente repetições e eventos esperados.
+- [x] Selecionar modelo de estimativa de pose; avaliar OpenPose ou alternativa e justificar a escolha. O PDF apresenta modelos como exemplos.
+- [x] Extrair pontos corporais e tratar frames sem detecção confiável.
+- [x] Identificar fases do movimento e contar repetições.
+- [x] Medir tempos e interrupções; definir critérios experimentais de desvio adequados ao enquadramento.
+- [x] Gerar relatório com eventos, instantes, medidas e limitações.
+- [x] Mostrar o vídeo original junto dos instantes do relatório para permitir a verificação dos achados.
+- [x] Avaliar como o fluxo cobre padrões de movimentação; registrar que exercício gravado não demonstra monitoramento contínuo durante internação.
 
 **Concluída quando:** o vídeo gera um relatório verificável de repetições e desvios definidos para a demonstração, sem apresentar os critérios como avaliação clínica validada.
+
+**Validação integrada em 15/11/2026:** o MediaPipe Pose Landmarker Lite foi escolhido como alternativa
+local e leve. O adaptador amostra o MP4, seleciona o lado corporal mais visível e calcula o ângulo
+do joelho. A regra com histerese classifica posição sentada até 115° e em pé a partir de 150°,
+conta ciclos completos e marca fases de pelo menos 5 s para revisão. A interface persiste e exibe
+cobertura, faixa angular, repetições, ciclos incompletos, eventos temporais e limitações. O protocolo e a justificativa
+estão em `docs/video-pose-analysis.md`. No MP4 de 41,65 s, a anotação manual indicava cinco ciclos
+completos, uma pausa longa sentada e uma sexta tentativa incompleta. A análise automática encontrou
+os mesmos eventos: cinco repetições, fase sentada de 12,8 s e ciclo incompleto iniciado aos 40,3 s,
+com pose em 100% dos quadros amostrados e ângulo do joelho entre 70,0° e 174,6°. O resultado valida
+o cenário encenado, não a generalização clínica do método. O mesmo relatório foi processado,
+persistido e conferido na interface do paciente, incluindo os eventos temporais e as limitações.
 
 ### Etapa 6 — Sinais vitais, prescrições e alertas
 

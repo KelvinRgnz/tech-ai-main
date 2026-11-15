@@ -144,7 +144,7 @@ def test_health_and_interface_are_available() -> None:
     assert "Entrar no assistente" in page.text
     assert 'id="login-form"' in page.text
     assert "is-locked" in page.text
-    assert "app.js?v=document1" in page.text
+    assert "app.js?v=video2" in page.text
     assert 'id="patient-select"' in page.text
     assert 'id="patient-form"' in page.text
     assert 'id="attachment-button"' in page.text

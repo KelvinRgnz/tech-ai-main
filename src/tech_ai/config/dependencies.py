@@ -12,6 +12,7 @@ from tech_ai.config.settings import (
     LocalEmbeddingSettings,
     Settings,
 )
+from tech_ai.config.video import VideoSettings
 from tech_ai.integrations.chroma.knowledge_repository import ChromaKnowledgeRepository
 from tech_ai.integrations.documents.azure import AzureDocumentReader
 from tech_ai.integrations.embeddings.local_onnx import LocalOnnxEmbeddingClient
@@ -23,6 +24,7 @@ from tech_ai.integrations.postgres_conversations import PostgresConversationRepo
 from tech_ai.integrations.postgres_patients import PostgresPatientRepository
 from tech_ai.integrations.speech.azure import AzureSpeechTranscriber
 from tech_ai.integrations.translation.mymemory import MyMemoryTranslationClient
+from tech_ai.integrations.video.mediapipe import MediaPipeVideoMovementAnalyzer
 from tech_ai.services.attachment_service import AttachmentService
 from tech_ai.services.auth_service import AuthService
 from tech_ai.services.conversation_service import ConversationService
@@ -38,6 +40,7 @@ def build_patient_service() -> PatientService:
 
 def build_attachment_service() -> AttachmentService:
     azure = AzureSettings.from_environment()
+    video = VideoSettings.from_environment()
     transcriber = (
         AzureSpeechTranscriber(
             key=azure.speech_key,
@@ -67,12 +70,18 @@ def build_attachment_service() -> AttachmentService:
         if azure.document_enabled
         else None
     )
+    video_analyzer = (
+        MediaPipeVideoMovementAnalyzer(video.model_path, sample_fps=video.sample_fps)
+        if video.enabled
+        else None
+    )
     return AttachmentService(
         PostgresAttachmentRepository(DatabaseSettings.from_environment()),
         LocalAttachmentStorage(AttachmentSettings.from_environment().storage_dir),
         audio_transcriber=transcriber,
         text_analyzer=text_analyzer,
         document_reader=document_reader,
+        video_analyzer=video_analyzer,
     )
 
 

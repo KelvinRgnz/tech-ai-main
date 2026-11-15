@@ -156,7 +156,7 @@ function attachmentPreview(attachment) {
   if (attachment.modality === "audio") {
     return `<audio class="attachment-media" controls preload="metadata" src="${url}"></audio>`;
   }
-  return `<video class="attachment-media" controls preload="metadata" src="${url}"></video>`;
+  return `<video class="attachment-media" controls preload="none" src="${url}"></video>`;
 }
 
 function renderAttachment(attachment) {
@@ -165,12 +165,15 @@ function renderAttachment(attachment) {
   const failed = analysis.status === "failed";
   const speechCompleted = analysis.processor_name.startsWith("azure-speech");
   const ocrCompleted = analysis.processor_name === "azure-document-intelligence-read";
+  const videoCompleted = analysis.processor_name === "mediapipe-pose-sit-to-stand";
   const statusLabel = completed
     ? speechCompleted
       ? "Transcrição concluída"
       : ocrCompleted
         ? "OCR concluído"
-      : "Simulação concluída"
+        : videoCompleted
+          ? "Análise de movimento concluída"
+          : "Simulação concluída"
     : failed
       ? "Falha no processamento"
       : "Aguardando processamento";
@@ -180,9 +183,11 @@ function renderAttachment(attachment) {
   const limitations = (analysis.limitations || [])
     .map((item) => `<li>${escapeHtml(item)}</li>`)
     .join("");
-  const retry = failed
-    ? `<button type="button" class="retry-button" data-retry-id="${attachment.id}">Tentar novamente</button>`
-    : "";
+  const processAction = failed
+    ? `<button type="button" class="retry-button" data-process-id="${attachment.id}">Tentar novamente</button>`
+    : !completed
+      ? `<button type="button" class="retry-button" data-process-id="${attachment.id}">Processar agora</button>`
+      : "";
   const card = document.createElement("article");
   card.className = "bubble attachment-card";
   card.dataset.attachmentId = attachment.id;
@@ -197,12 +202,12 @@ function renderAttachment(attachment) {
     ${analysis.summary ? `<p>${escapeHtml(analysis.summary)}</p>` : ""}
     ${observations ? `<h4>Observações</h4><ul>${observations}</ul>` : ""}
     ${limitations ? `<h4>Limitações</h4><ul class="warnings">${limitations}</ul>` : ""}
-    ${retry}
+    ${processAction}
   `;
   const existing = transcript.querySelector(`[data-attachment-id="${attachment.id}"]`);
   if (existing) existing.replaceWith(card);
   else transcript.appendChild(card);
-  card.querySelector("[data-retry-id]")?.addEventListener("click", () => {
+  card.querySelector("[data-process-id]")?.addEventListener("click", () => {
     processAttachment(attachment.id).catch(showAttachmentError);
   });
 }
@@ -454,6 +459,8 @@ async function processAttachment(attachmentId) {
       : "Transcrição concluída com o Azure Speech."
     : processor === "azure-document-intelligence-read"
       ? "Texto extraído com o Azure Document Intelligence."
+    : processor === "mediapipe-pose-sit-to-stand"
+      ? "Movimento analisado localmente com o MediaPipe Pose."
     : "Simulação local concluída.";
   statusCopy.textContent = `Conversa de ${activePatient.display_name}.`;
 }

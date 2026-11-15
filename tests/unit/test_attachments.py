@@ -17,6 +17,7 @@ from tech_ai.errors import (
     DocumentOcrError,
     LanguageAnalysisError,
     SpeechTranscriptionError,
+    VideoAnalysisError,
 )
 from tech_ai.integrations.auth.password import hash_password
 from tech_ai.integrations.documents.client import DocumentReader, OcrPage, OcrResult
@@ -27,6 +28,11 @@ from tech_ai.integrations.language.client import (
 )
 from tech_ai.integrations.local_attachment_storage import LocalAttachmentStorage
 from tech_ai.integrations.speech.client import SpeechTranscriber, SpeechTranscript, WordTiming
+from tech_ai.integrations.video.client import (
+    MovementEvent,
+    VideoMovementAnalysis,
+    VideoMovementAnalyzer,
+)
 from tech_ai.models.attachment import AttachmentAnalysis, StoredAttachment
 from tech_ai.services.attachment_service import AttachmentService
 
@@ -34,6 +40,7 @@ PNG = b"\x89PNG\r\n\x1a\n" + b"academic-image"
 PDF = b"%PDF-1.7\n% academic fictional report\n%%EOF"
 WAV = b"RIFF" + b"\x00\x00\x00\x00" + b"WAVE" + b"academic-audio"
 OGG = b"OggS" + (b"\x00" * 24) + b"OpusHead" + b"academic-audio"
+MP4 = b"\x00\x00\x00\x18ftypmp42" + b"academic-video"
 PASSWORD = "test-password"
 
 
@@ -150,6 +157,29 @@ class FakeDocumentReader:
         )
 
 
+class FakeVideoAnalyzer:
+    def __init__(self) -> None:
+        self.calls: list[Path] = []
+        self.error: VideoAnalysisError | None = None
+
+    def analyze(self, path: Path) -> VideoMovementAnalysis:
+        self.calls.append(path)
+        if self.error is not None:
+            raise self.error
+        return VideoMovementAnalysis(
+            duration_seconds=18.0,
+            analyzed_frames=90,
+            frames_with_pose=81,
+            repetitions=2,
+            minimum_knee_angle=83.2,
+            maximum_knee_angle=174.6,
+            events=(
+                MovementEvent("standing", 4.2, "Posição em pé detectada."),
+                MovementEvent("repetition", 8.1, "Repetição 1 concluída."),
+            ),
+        )
+
+
 async def stream(data: bytes) -> AsyncIterator[bytes]:
     yield data
 
@@ -161,6 +191,7 @@ def build_client(
     transcriber: SpeechTranscriber | None = None,
     text_analyzer: TextAnalyzer | None = None,
     document_reader: DocumentReader | None = None,
+    video_analyzer: VideoMovementAnalyzer | None = None,
 ) -> TestClient:
     password_hash = hash_password(PASSWORD)
     service = AttachmentService(
@@ -169,6 +200,7 @@ def build_client(
         audio_transcriber=transcriber,
         text_analyzer=text_analyzer,
         document_reader=document_reader,
+        video_analyzer=video_analyzer,
     )
     client = TestClient(
         create_app(
@@ -445,6 +477,60 @@ def test_audio_preserves_transcription_when_language_analysis_fails(tmp_path: Pa
     assert analysis["processor_name"] == "azure-speech-realtime"
     assert "dificuldade" in analysis["summary"]
     assert "preservada" in " ".join(analysis["limitations"])
+
+
+def test_video_uses_pose_analyzer_and_persists_report(tmp_path: Path) -> None:
+    repository = MemoryAttachments()
+    patient_id = uuid4()
+    repository.add_patient("alice", patient_id)
+    analyzer = FakeVideoAnalyzer()
+    client = build_client(repository, tmp_path, video_analyzer=analyzer)
+    uploaded = client.post(
+        f"/api/patients/{patient_id}/attachments?filename=exercicio.mp4",
+        content=MP4,
+        headers={"Content-Type": "video/mp4"},
+    ).json()
+
+    first = client.post(
+        f"/api/patients/{patient_id}/attachments/{uploaded['id']}/process"
+    )
+    second = client.post(
+        f"/api/patients/{patient_id}/attachments/{uploaded['id']}/process"
+    )
+
+    analysis = first.json()["analysis"]
+    rendered = " ".join(analysis["observations"])
+    assert analysis["processor_name"] == "mediapipe-pose-sit-to-stand"
+    assert "2 repetição" in analysis["summary"]
+    assert "90%" in rendered
+    assert "83° a 175°" in rendered
+    assert "4.2 s" in rendered
+    assert "não constitui avaliação clínica" in " ".join(analysis["limitations"])
+    assert second.json() == first.json()
+    assert len(analyzer.calls) == 1
+
+
+def test_video_persists_sanitized_analysis_failure(tmp_path: Path) -> None:
+    repository = MemoryAttachments()
+    patient_id = uuid4()
+    repository.add_patient("alice", patient_id)
+    analyzer = FakeVideoAnalyzer()
+    analyzer.error = VideoAnalysisError("Nenhuma pose corporal confiável foi detectada.")
+    client = build_client(repository, tmp_path, video_analyzer=analyzer)
+    uploaded = client.post(
+        f"/api/patients/{patient_id}/attachments?filename=sem-pessoa.mp4",
+        content=MP4,
+        headers={"Content-Type": "video/mp4"},
+    ).json()
+
+    response = client.post(
+        f"/api/patients/{patient_id}/attachments/{uploaded['id']}/process"
+    )
+
+    analysis = response.json()["analysis"]
+    assert analysis["status"] == "failed"
+    assert analysis["error_code"] == "video_analysis_failed"
+    assert "Nenhuma pose" in analysis["limitations"][0]
 
 
 @pytest.mark.parametrize(

@@ -17,10 +17,12 @@ from tech_ai.errors import (
     LanguageAnalysisError,
     PatientNotFoundError,
     SpeechTranscriptionError,
+    VideoAnalysisError,
 )
 from tech_ai.integrations.documents.client import DocumentReader, OcrResult
 from tech_ai.integrations.language.client import TextAnalysis, TextAnalyzer
 from tech_ai.integrations.speech.client import SpeechTranscriber, SpeechTranscript
+from tech_ai.integrations.video.client import VideoMovementAnalysis, VideoMovementAnalyzer
 from tech_ai.models.attachment import (
     AttachmentAnalysis,
     AttachmentModality,
@@ -69,12 +71,14 @@ class AttachmentService:
         audio_transcriber: SpeechTranscriber | None = None,
         text_analyzer: TextAnalyzer | None = None,
         document_reader: DocumentReader | None = None,
+        video_analyzer: VideoMovementAnalyzer | None = None,
     ) -> None:
         self._repository = repository
         self._storage = storage
         self._audio_transcriber = audio_transcriber
         self._text_analyzer = text_analyzer
         self._document_reader = document_reader
+        self._video_analyzer = video_analyzer
 
     async def upload(
         self,
@@ -162,7 +166,54 @@ class AttachmentService:
                 attachment,
                 self._document_reader,
             )
+        if attachment.modality == "video" and self._video_analyzer is not None:
+            return self._process_video(owner, patient_id, attachment, self._video_analyzer)
         return self._process_simulated(owner, patient_id, attachment)
+
+    def _process_video(
+        self,
+        owner: str,
+        patient_id: UUID,
+        attachment: StoredAttachment,
+        analyzer: VideoMovementAnalyzer,
+    ) -> AttachmentView:
+        started = datetime.now(UTC)
+        try:
+            result = analyzer.analyze(self._storage.resolve(attachment.storage_key))
+        except VideoAnalysisError as error:
+            finished = datetime.now(UTC)
+            analysis = AttachmentAnalysis(
+                attachment.analysis.id,
+                "failed",
+                "mediapipe-pose-sit-to-stand",
+                "1.0",
+                attachment.analysis.attempt + 1,
+                "Não foi possível analisar o movimento no vídeo.",
+                (),
+                (str(error), "Nenhuma conclusão clínica foi produzida a partir do vídeo."),
+                "video_analysis_failed",
+                attachment.analysis.created_at,
+                started,
+                finished,
+            )
+            return self._save_analysis(owner, patient_id, attachment, analysis)
+
+        finished = datetime.now(UTC)
+        analysis = AttachmentAnalysis(
+            attachment.analysis.id,
+            "completed",
+            "mediapipe-pose-sit-to-stand",
+            "1.0",
+            attachment.analysis.attempt + 1,
+            f"Análise de pose: {result.repetitions} repetição(ões) de sentar e levantar.",
+            _video_observations(result),
+            _video_limitations(),
+            None,
+            attachment.analysis.created_at,
+            started,
+            finished,
+        )
+        return self._save_analysis(owner, patient_id, attachment, analysis)
 
     def _process_document(
         self,
@@ -479,3 +530,26 @@ def _document_limitations(result: OcrResult) -> tuple[str, ...]:
     if len(result.pages) >= 2:
         limitations.append("No plano F0, somente as duas primeiras páginas são processadas.")
     return tuple(limitations)
+
+
+def _video_observations(result: VideoMovementAnalysis) -> tuple[str, ...]:
+    observations = [
+        f"Duração analisada: {result.duration_seconds:.1f} s.",
+        f"Cobertura de pose: {result.pose_coverage:.0%} dos quadros amostrados.",
+        f"Ângulo de joelho observado: {result.minimum_knee_angle:.0f}° a "
+        f"{result.maximum_knee_angle:.0f}°.",
+    ]
+    observations.extend(
+        f"Evento em {event.timestamp_seconds:.1f} s: {event.description}"
+        for event in result.events
+    )
+    return tuple(observations)
+
+
+def _video_limitations() -> tuple[str, ...]:
+    return (
+        "Os limiares angulares são experimentais e específicos desta demonstração.",
+        "A contagem depende de câmera fixa, visão lateral e corpo inteiro visível.",
+        "O relatório descreve movimento aparente e não constitui avaliação clínica.",
+        "Uma gravação isolada não demonstra monitoramento contínuo de internação.",
+    )

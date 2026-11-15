@@ -24,6 +24,7 @@ from tech_ai.errors import (
     ModelRuntimeError,
     SpeechTranscriptionError,
     TranslationError,
+    VideoAnalysisError,
 )
 from tech_ai.models.assistant import AssistantQuery
 from tech_ai.services.model_artifact_service import inspect_model_artifact
@@ -65,6 +66,11 @@ def _build_parser(settings: Settings) -> argparse.ArgumentParser:
         required=True,
         help="Documento fictício com até 4 MB e, no caso de PDF, até duas páginas úteis.",
     )
+    video_parser = subcommands.add_parser(
+        "check-video",
+        help="Analisa um MP4 fictício de exercício com o MediaPipe Pose.",
+    )
+    video_parser.add_argument("--file", type=Path, required=True, help="Vídeo MP4 local.")
     inspect_parser = subcommands.add_parser(
         "inspect-model",
         help="Valida e exibe o manifesto de um modelo publicado.",
@@ -292,6 +298,43 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             )
             return 0
+        if arguments.command == "check-video":
+            from tech_ai.config.video import VideoSettings
+            from tech_ai.integrations.video.mediapipe import MediaPipeVideoMovementAnalyzer
+
+            video = VideoSettings.from_environment()
+            video_analyzer = MediaPipeVideoMovementAnalyzer(
+                video.model_path,
+                sample_fps=video.sample_fps,
+            )
+            video_result = video_analyzer.analyze(arguments.file)
+            print(
+                json.dumps(
+                    {
+                        "status": "ok",
+                        "data": "arquivo fictício local",
+                        "duration_seconds": round(video_result.duration_seconds, 2),
+                        "pose_coverage": round(video_result.pose_coverage, 3),
+                        "repetitions": video_result.repetitions,
+                        "knee_angle_degrees": {
+                            "minimum": round(video_result.minimum_knee_angle, 1),
+                            "maximum": round(video_result.maximum_knee_angle, 1),
+                        },
+                        "events": [
+                            {
+                                "kind": event.kind,
+                                "timestamp_seconds": round(event.timestamp_seconds, 1),
+                                "description": event.description,
+                            }
+                            for event in video_result.events
+                        ],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
         if arguments.command == "inspect-model":
             artifact = inspect_model_artifact(arguments.manifest)
             print(artifact.to_json())
@@ -358,6 +401,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         ModelRuntimeError,
         SpeechTranscriptionError,
         TranslationError,
+        VideoAnalysisError,
     ) as error:
         print(f"Erro: {error}", file=sys.stderr)
         return 2

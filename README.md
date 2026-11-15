@@ -111,6 +111,20 @@ definido em `TECH_AI_AUTH_USERS`. O modo padrão consulta o Chroma Cloud e mostr
 evidência mais próxima, as fontes numeradas e o aviso acadêmico. O modo com modelo usa o mesmo
 fluxo do comando `ask` e só funciona depois do extra `runtime`.
 
+### Análise local do vídeo de fisioterapia
+
+O fluxo acadêmico de vídeo usa o MediaPipe Pose Landmarker para estimar articulações, contar
+ciclos de sentar e levantar e registrar eventos com instante verificável. Instale o extra e
+baixe o bundle oficial conforme o passo a passo em
+[`docs/video-pose-analysis.md`](docs/video-pose-analysis.md). Depois, valide um MP4 fictício:
+
+```powershell
+uv run --no-sync tech-ai check-video --file ".data/samples/teste_video.mp4"
+```
+
+O relatório é experimental, depende do protocolo de enquadramento e não constitui avaliação
+clínica.
+
 ## Autenticação
 
 A API HTTP protege `/api/consult`, `/api/ask` e `/api/me`. Saúde, a página e os
