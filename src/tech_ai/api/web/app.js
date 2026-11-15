@@ -163,9 +163,13 @@ function renderAttachment(attachment) {
   const analysis = attachment.analysis;
   const completed = analysis.status === "completed";
   const failed = analysis.status === "failed";
+  const speechCompleted = analysis.processor_name.startsWith("azure-speech");
+  const ocrCompleted = analysis.processor_name === "azure-document-intelligence-read";
   const statusLabel = completed
-    ? analysis.processor_name.startsWith("azure-speech")
+    ? speechCompleted
       ? "Transcrição concluída"
+      : ocrCompleted
+        ? "OCR concluído"
       : "Simulação concluída"
     : failed
       ? "Falha no processamento"
@@ -443,10 +447,13 @@ async function processAttachment(attachmentId) {
     { method: "POST" }
   );
   renderAttachment(processed);
-  attachmentFeedback.textContent = processed.analysis.processor_name.startsWith("azure-speech")
+  const processor = processed.analysis.processor_name;
+  attachmentFeedback.textContent = processor.startsWith("azure-speech")
     ? processed.analysis.processor_name === "azure-speech-language"
       ? "Transcrição e análise textual concluídas com a Azure."
       : "Transcrição concluída com o Azure Speech."
+    : processor === "azure-document-intelligence-read"
+      ? "Texto extraído com o Azure Document Intelligence."
     : "Simulação local concluída.";
   statusCopy.textContent = `Conversa de ${activePatient.display_name}.`;
 }

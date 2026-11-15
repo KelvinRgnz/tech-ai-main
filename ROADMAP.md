@@ -2,7 +2,7 @@
 
 Guia de evolução do assistente médico acadêmico para análise multimodal e monitoramento simulado de pacientes.
 
-**Estado:** contratos iniciais documentados e validação automatizada da base aprovada; preparação para a etapa 1.
+**Estado:** anexos e Azure validados; foco atual nos requisitos obrigatórios de vídeo e anomalias.
 
 Este arquivo está na raiz versionada da aplicação e acompanha a evolução do desafio acadêmico.
 
@@ -15,7 +15,7 @@ Permitir que uma conversa represente um paciente fictício e reúna perguntas, a
 | Pacientes | Dados fictícios; uma conversa por paciente |
 | Vídeo | Fisioterapia: exercício encenado de levantar e sentar de uma cadeira |
 | Áudio | Gravações encenadas de 30 segundos a 2 minutos; transcrição e análise de pausas |
-| Imagens | OCR de laudos e prescrições; interpretação de radiografias fora desta versão |
+| Imagens | OCR complementar de uma prescrição fictícia; refinamentos ficam no backlog |
 | Monitoramento | Reprodução de séries de sinais vitais como transmissão ao vivo |
 | Alertas | Painel na aplicação, com revisão pelo usuário |
 | Nuvem | Azure Speech to Text e Azure Text Analytics, conforme o PDF |
@@ -23,6 +23,20 @@ Permitir que uma conversa represente um paciente fictício e reúna perguntas, a
 | Modelo | Candidato atual: `mikaelkanzaki/tech3-v3-pt-br`, sobre o modelo base configurado no manifesto |
 
 O limite inicial de duração do áudio é uma escolha de implementação, não um parâmetro clínico. Pausas, movimentos e anomalias serão apresentados como observações experimentais, com suas limitações. O adaptador precisa ser avaliado para o novo contexto multimodal convertido em texto.
+
+### Escopo acadêmico confirmado no PDF
+
+Para maximizar a aderência à avaliação da FIAP, a implementação prioriza:
+
+1. vídeo clínico de fisioterapia, detecção de movimento/eventos fora do padrão e relatório;
+2. áudio de consulta, Azure Speech to Text, termos e sentimento com Azure Text Analytics;
+3. anomalias em sinais vitais, evolução de prescrições e movimentação, com alertas;
+4. fluxo multimodal, relatório técnico, repositório e vídeo demonstrativo de até 15 minutos.
+
+O OCR real já entregue é um bônus útil para demonstrar Azure e texto documental. Editor de
+correções, versionamento de OCR e extração clínica detalhada não são requisitos obrigatórios do
+PDF e ficam no backlog. A evolução de prescrições será demonstrada na Etapa 6 com dados sintéticos
+estruturados e comparáveis, sem depender de um editor documental de nível comercial.
 
 ## 2. Base existente e limites arquiteturais
 
@@ -45,7 +59,7 @@ O ChromaDB de conhecimento permanece somente para leitura. Dados de pacientes e 
 2. Anexa um arquivo; o backend valida extensão, tipo declarado e conteúdo real.
 3. O sistema registra o anexo e inicia o processamento específico da modalidade.
 4. A interface exibe progresso, resultado, limitações ou erro recuperável.
-5. O usuário pode revisar o texto extraído antes de utilizá-lo em uma pergunta.
+5. A interface apresenta resultados e limitações; revisão editável fica no backlog.
 6. O assistente recebe pergunta, achados selecionados e evidências do RAG.
 7. A reprodução de sinais vitais produz eventos e alertas vinculados ao paciente.
 8. O painel permite consultar a evidência que originou cada alerta e marcá-lo como revisado.
@@ -57,7 +71,7 @@ As caixas indicam trabalho concluído, não apenas código escrito. Ao concluir 
 ### Etapa 0 — Confirmar a base e os contratos
 
 - [x] Executar os checks e a aplicação via TestClient com integrações simuladas; registrar o estado inicial.
-- [ ] Conferir novamente o PDF e manter a matriz de requisitos deste guia atualizada.
+- [x] Conferir novamente o PDF e manter a matriz de requisitos deste guia atualizada.
 - [x] Definir identificadores e relação entre usuário, paciente, conversa e anexo.
 - [x] Definir PostgreSQL no Supabase para metadados e disco local para arquivos, sem reutilizar o ChromaDB médico.
 - [x] Definir contrato comum de análise: modalidade, estado, resumo, observações, evidências, limitações, versão do processador e horários.
@@ -94,6 +108,7 @@ Depende da etapa 0; deve preceder testes com serviços reais.
 - [x] Estimar consumo para o conjunto de demonstração antes de provisionar recursos.
 - [x] Provisionar Speech to Text F0 em Brazil South.
 - [x] Provisionar o serviço correspondente ao Text Analytics requerido pelo PDF.
+- [x] Provisionar Document Intelligence F0 em Brazil South para o OCR inicial.
 - [x] Configurar credenciais por ambiente, sem incluí-las no Git, no navegador ou nos logs.
 - [x] Criar clientes intercambiáveis: simulado para desenvolvimento e Azure para integração.
 - [x] Configurar limites locais de duração, volume de arquivos e concorrência.
@@ -109,22 +124,34 @@ transcreveu um relato fictício de 12,23 s em `pt-BR`, devolvendo 24 palavras co
 temporais. O recurso F0 `language-tech-ai-poc-mikael` também foi provisionado e o diagnóstico
 fictício devolveu sentimento negativo com 92% de confiança e três frases-chave. A estimativa para
 até 20 áudios de demonstração é de no máximo 40 minutos de Speech e 40 registros do Language,
-antes de repetições. Document Intelligence permanece pendente, portanto a etapa ainda não está
-concluída.
+antes de repetições. O Document Intelligence ainda estava pendente nesse primeiro teste.
 
-### Etapa 3 — Imagens de laudos e prescrições
+**Validação adicional em 15/11/2026:** o recurso F0 `document-tech-ai-poc-mikael` foi
+provisionado; `tech-ai check-document` processou uma prescrição fictícia de uma página com 496
+caracteres, e o fluxo integrado exibiu o PDF, o texto original e as limitações. O resultado
+persistiu após recarregar a página e permaneceu isolado no paciente de origem. Com os três
+serviços reais pequenos, cache e acompanhamento de consumo validados, a Etapa 2 está concluída.
+
+### Etapa 3 - OCR complementar de documentos
 
 Depende da etapa 1 e, caso o OCR escolhido seja em nuvem, da etapa 2.
 
-- [ ] Criar documentos fictícios legíveis para a demonstração.
-- [ ] Escolher a implementação de OCR considerando qualidade, custo e integração.
-- [ ] Extrair texto preservando a referência à imagem original.
-- [ ] Sinalizar trechos ilegíveis ou incertos; não completar valores ausentes por suposição.
-- [ ] Permitir revisão e correção do texto, preservando o resultado original.
-- [ ] Estruturar informações disponíveis: data, medicamento, dose, unidade, frequência e demais campos pertinentes.
-- [ ] Exibir texto, campos extraídos e limitações na conversa.
+- [x] Criar uma prescrição fictícia legível para a demonstração.
+- [x] Escolher Azure Document Intelligence `prebuilt-read` para o OCR inicial, considerando qualidade, custo e integração.
+- [x] Extrair texto preservando a referência ao PDF ou à imagem original.
+- [x] Não completar valores ausentes por suposição e apresentar limitações do OCR.
+- [x] Exibir documento, texto original extraído e limitações na conversa.
 
-**Concluída quando:** um laudo e uma prescrição fictícios podem ser anexados, lidos, revisados e vinculados ao paciente com rastreabilidade.
+**Concluída no escopo acadêmico quando:** uma prescrição fictícia pode ser anexada, lida e
+vinculada ao paciente com rastreabilidade. Refinamentos de produto permanecem no backlog.
+
+**Validação parcial em 15/11/2026:** uma prescrição fictícia em PDF foi processada pelo
+`prebuilt-read`; a interface exibiu o original, 496 caracteres reconhecidos, contagem de páginas e
+ressalvas de revisão humana. Isolamento por paciente, persistência e reutilização foram confirmados.
+Essa entrega complementar está concluída no escopo acadêmico definido pelo PDF.
+
+**Backlog pós-entrega:** laudo adicional, marcação regional de trechos incertos, correção
+versionada e estruturação de data, medicamento, dose, unidade e frequência a partir do OCR.
 
 ### Etapa 4 — Áudio: transcrição e observações temporais
 
@@ -171,13 +198,13 @@ Depende da etapa 1.
 
 ### Etapa 6 — Sinais vitais, prescrições e alertas
 
-Depende das etapas 1 e 3; utiliza eventos da etapa 5 quando disponíveis.
+Depende da etapa 1; utiliza eventos da etapa 5 quando disponíveis.
 
 - [ ] Criar séries fictícias com horário, batimentos, pressão arterial e oxigenação.
 - [ ] Criar cenários conhecidos: estável, alteração pontual, alteração persistente e ausência de dados.
 - [ ] Implementar reprodução com iniciar, pausar, reiniciar e velocidade configurável.
 - [ ] Definir técnica de detecção e parâmetros experimentais; distinguir ausência de medição de anomalia fisiológica.
-- [ ] Comparar prescrições sucessivas do mesmo paciente e destacar mudanças de medicamento, dose ou frequência.
+- [ ] Comparar prescrições sintéticas estruturadas do mesmo paciente e destacar mudanças de medicamento, dose ou frequência.
 - [ ] Tratar mudanças como eventos para revisão, sem concluir automaticamente que constituem erro de tratamento.
 - [ ] Incorporar eventos de movimentação ao mecanismo de alertas.
 - [ ] Criar alertas com origem, evidência, horário, regra/versão e estado de revisão.
@@ -188,7 +215,7 @@ Depende das etapas 1 e 3; utiliza eventos da etapa 5 quando disponíveis.
 
 ### Etapa 7 — Fusão multimodal e integração com o assistente
 
-Depende dos resultados das etapas 3 a 6. Pode começar com uma modalidade e ser ampliada.
+Depende dos resultados das etapas 4 a 6; o OCR complementar pode ser incluído sem bloquear o fluxo.
 
 - [ ] Normalizar resultados em uma linha temporal por paciente, diferenciando data do evento e data de upload.
 - [ ] Definir quais análises e intervalos entram em cada pergunta; limitar o contexto enviado ao modelo.
@@ -229,7 +256,7 @@ Depende das etapas anteriores.
 | Azure Speech to Text | 2 e 4 | Transcrição real pela integração |
 | Azure Text Analytics: termos e sentimentos | 2 e 4 | Resultado real vinculado à transcrição |
 | Anomalias em sinais vitais | 6 | Série reproduzida e alertas verificáveis |
-| Evolução de prescrições | 3 e 6 | Comparação temporal de documentos do mesmo paciente |
+| Evolução de prescrições | 6 | Comparação temporal de prescrições sintéticas estruturadas do mesmo paciente |
 | Padrões de movimentação durante internação | 5 e 6 | Cenário simulado a detalhar; fisioterapia sozinha é cobertura parcial |
 | Alertas automáticos à equipe | 6 | Painel com origem, histórico e revisão |
 | Fusão de texto, áudio e vídeo | 7 | Pergunta com múltiplas modalidades e contexto do paciente |
@@ -239,9 +266,9 @@ Depende das etapas anteriores.
 
 ## 6. Próxima tarefa e acompanhamento
 
-**Próxima tarefa:** provisionar e integrar o Azure Document Intelligence F0 para iniciar o OCR de
-laudos e prescrições fictícios, mantendo cache, limites de consumo e as ressalvas de que extração e
-classificação textual não constituem diagnóstico clínico.
+**Próxima tarefa:** implementar a Etapa 5 com o vídeo fictício de fisioterapia já gravado:
+inspeção técnica, estimativa de pose, contagem de repetições, eventos fora do padrão e relatório
+com instantes verificáveis.
 
 Para cada tarefa implementada, registrar:
 

@@ -13,6 +13,7 @@ from tech_ai.config.settings import (
     Settings,
 )
 from tech_ai.integrations.chroma.knowledge_repository import ChromaKnowledgeRepository
+from tech_ai.integrations.documents.azure import AzureDocumentReader
 from tech_ai.integrations.embeddings.local_onnx import LocalOnnxEmbeddingClient
 from tech_ai.integrations.language.azure import AzureLanguageAnalyzer
 from tech_ai.integrations.llm.huggingface import HuggingFaceLlmClient
@@ -56,11 +57,22 @@ def build_attachment_service() -> AttachmentService:
         if azure.language_enabled
         else None
     )
+    document_reader = (
+        AzureDocumentReader(
+            key=azure.document_key,
+            endpoint=azure.document_endpoint,
+            max_pages=min(azure.max_document_pages, 2),
+            max_concurrent_requests=azure.max_concurrent_requests,
+        )
+        if azure.document_enabled
+        else None
+    )
     return AttachmentService(
         PostgresAttachmentRepository(DatabaseSettings.from_environment()),
         LocalAttachmentStorage(AttachmentSettings.from_environment().storage_dir),
         audio_transcriber=transcriber,
         text_analyzer=text_analyzer,
+        document_reader=document_reader,
     )
 
 

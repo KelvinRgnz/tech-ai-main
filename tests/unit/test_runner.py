@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from tech_ai.integrations.documents.client import OcrPage, OcrResult
 from tech_ai.integrations.language.client import SentimentConfidence, TextAnalysis
 from tech_ai.integrations.speech.client import SpeechTranscript, WordTiming
 from tech_ai.runner import main
@@ -181,3 +182,44 @@ def test_check_speech_accepts_local_ogg(
 
     assert json.loads(capsys.readouterr().out)["transcript"] == "Áudio do WhatsApp."
     assert calls == [(source, "audio/ogg")]
+
+
+def test_check_document_uses_fictitious_local_file_without_exposing_key(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    document = tmp_path / "prescricao-ficticia.pdf"
+    document.write_bytes(b"%PDF-test")
+    calls: list[tuple[Path, str]] = []
+
+    class FakeReader:
+        def __init__(self, **_configuration: object) -> None:
+            pass
+
+        def read(self, path: Path, *, content_type: str) -> OcrResult:
+            calls.append((path, content_type))
+            return OcrResult(
+                text="Dipirona 500 mg.",
+                pages=(OcrPage(1, "Dipirona 500 mg."),),
+            )
+
+    monkeypatch.setenv("TECH_AI_AZURE_DOCUMENT_ENABLED", "true")
+    monkeypatch.setenv("TECH_AI_AZURE_DOCUMENT_KEY", "private-document-key")
+    monkeypatch.setenv(
+        "TECH_AI_AZURE_DOCUMENT_ENDPOINT",
+        "https://document.example.azure.com/",
+    )
+    monkeypatch.setattr(
+        "tech_ai.integrations.documents.azure.AzureDocumentReader",
+        FakeReader,
+    )
+
+    assert main(["check-document", "--file", str(document)]) == 0
+
+    output = capsys.readouterr().out
+    payload = json.loads(output)
+    assert payload["status"] == "ok"
+    assert payload["text"] == "Dipirona 500 mg."
+    assert "private-document-key" not in output
+    assert calls == [(document, "application/pdf")]

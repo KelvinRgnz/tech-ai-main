@@ -21,6 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 # Clientes carregados apenas quando as integrações Azure são habilitadas.
 azure = [
+  "azure-ai-documentintelligence==1.0.2",
   "azure-ai-textanalytics>=5.3,<6",
   "azure-cognitiveservices-speech>=1.47,<2",
   "imageio-ffmpeg>=0.6,<1",
@@ -108,6 +109,7 @@ omit = [
   "src/tech_ai/integrations/speech/azure.py",
   "src/tech_ai/integrations/speech/conversion.py",
   "src/tech_ai/integrations/language/azure.py",
+  "src/tech_ai/integrations/documents/azure.py",
 ]
 
 [tool.coverage.report]

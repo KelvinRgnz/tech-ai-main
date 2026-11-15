@@ -13,10 +13,12 @@ from tech_ai.errors import (
     AttachmentNotFoundError,
     AttachmentStorageError,
     AttachmentValidationError,
+    DocumentOcrError,
     LanguageAnalysisError,
     PatientNotFoundError,
     SpeechTranscriptionError,
 )
+from tech_ai.integrations.documents.client import DocumentReader, OcrResult
 from tech_ai.integrations.language.client import TextAnalysis, TextAnalyzer
 from tech_ai.integrations.speech.client import SpeechTranscriber, SpeechTranscript
 from tech_ai.models.attachment import (
@@ -66,11 +68,13 @@ class AttachmentService:
         *,
         audio_transcriber: SpeechTranscriber | None = None,
         text_analyzer: TextAnalyzer | None = None,
+        document_reader: DocumentReader | None = None,
     ) -> None:
         self._repository = repository
         self._storage = storage
         self._audio_transcriber = audio_transcriber
         self._text_analyzer = text_analyzer
+        self._document_reader = document_reader
 
     async def upload(
         self,
@@ -151,7 +155,65 @@ class AttachmentService:
         transcriber = self._audio_transcriber
         if attachment.modality == "audio" and transcriber is not None:
             return self._process_audio(owner, patient_id, attachment, transcriber)
+        if attachment.modality in {"document", "image"} and self._document_reader is not None:
+            return self._process_document(
+                owner,
+                patient_id,
+                attachment,
+                self._document_reader,
+            )
         return self._process_simulated(owner, patient_id, attachment)
+
+    def _process_document(
+        self,
+        owner: str,
+        patient_id: UUID,
+        attachment: StoredAttachment,
+        reader: DocumentReader,
+    ) -> AttachmentView:
+        started = datetime.now(UTC)
+        try:
+            result = reader.read(
+                self._storage.resolve(attachment.storage_key),
+                content_type=attachment.content_type,
+            )
+        except DocumentOcrError as error:
+            finished = datetime.now(UTC)
+            analysis = AttachmentAnalysis(
+                attachment.analysis.id,
+                "failed",
+                "azure-document-intelligence-read",
+                "1.0",
+                attachment.analysis.attempt + 1,
+                "Não foi possível extrair o texto do documento.",
+                (),
+                (
+                    str(error),
+                    "Nenhum campo ausente foi preenchido por suposição.",
+                ),
+                "document_ocr_failed",
+                attachment.analysis.created_at,
+                started,
+                finished,
+            )
+            return self._save_analysis(owner, patient_id, attachment, analysis)
+
+        finished = datetime.now(UTC)
+        analysis = AttachmentAnalysis(
+            attachment.analysis.id,
+            "completed",
+            "azure-document-intelligence-read",
+            "1.0",
+            attachment.analysis.attempt + 1,
+            f"Texto original do OCR: {result.text}",
+            _document_observations(result),
+            _document_limitations(result),
+            None,
+            attachment.analysis.created_at,
+            started,
+            finished,
+        )
+        return self._save_analysis(owner, patient_id, attachment, analysis)
 
     def _process_audio(
         self,
@@ -399,3 +461,21 @@ def _language_limitations() -> tuple[str, ...]:
         "Frases-chave são termos relevantes do texto e não constituem achados clínicos.",
         "Erros da transcrição podem alterar as frases-chave e o sentimento estimado.",
     )
+
+
+def _document_observations(result: OcrResult) -> tuple[str, ...]:
+    return (
+        f"Páginas processadas pelo OCR: {len(result.pages)}.",
+        f"Caracteres reconhecidos: {len(result.text)}.",
+    )
+
+
+def _document_limitations(result: OcrResult) -> tuple[str, ...]:
+    limitations = [
+        "O texto foi extraído automaticamente e precisa de revisão humana.",
+        "Trechos ilegíveis, manuscritos ou com baixa qualidade podem conter erros ou omissões.",
+        "Nenhum valor ausente foi completado por suposição.",
+    ]
+    if len(result.pages) >= 2:
+        limitations.append("No plano F0, somente as duas primeiras páginas são processadas.")
+    return tuple(limitations)

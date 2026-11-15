@@ -1,6 +1,6 @@
 # Contratos iniciais do contexto multimodal
 
-Estado: pacientes, conversas, mensagens, anexos e análises simuladas implementados na API. Migrações 1 e 2 confirmadas no Supabase; as migrações 3 e 4 ainda precisam ser aplicadas e validadas no banco real. O botão de anexo, a prévia, os estados e a restauração pela conversa foram implementados, incluindo documentos PDF. Tarefas assíncronas persistidas e processadores Azure permanecem futuros. Ruff e mypy aprovados; 185 testes aprovados, cobertura de 93,54%. Ver detalhes no ROADMAP.md da raiz.
+Estado: pacientes, conversas, mensagens, anexos e análises persistidas estão implementados na API, com as migrações 1 a 4 validadas no Supabase. O botão de anexo, a prévia, os estados, o isolamento por paciente e a restauração pela conversa foram validados. Azure Speech, Language e Document Intelligence funcionam com dados fictícios. OCR editável, tarefas assíncronas persistidas e refinamentos comerciais permanecem no backlog. Ver resultados atuais no ROADMAP.md da raiz.
 
 ## Persistência e identidade
 
@@ -14,7 +14,7 @@ Usar PostgreSQL no Supabase para metadados e diretório local configurável para
 | Anexo | id, conversation_id, message_id opcional, original_name, storage_key, sha256, detected_media_type, size_bytes, duration_ms opcional, created_at |
 | Análise | id, attachment_id, modality, status, processor_name, processor_version, config_hash, attempt, summary, observations, evidence, limitations, error_code opcional, created_at, started_at opcional, finished_at opcional |
 
-O nome original é apenas apresentação. O storage_key é gerado pelo servidor. Correções de OCR são versões separadas com autor e horário; preservar o texto original. Cada evidência referencia o anexo e, quando aplicável, intervalo temporal ou região da imagem. Observações contêm código, descrição, valor/unidade opcionais e referências às evidências. Não inventar confiança numérica quando o processador não a fornece.
+O nome original é apenas apresentação. O storage_key é gerado pelo servidor. O texto original do OCR é preservado; correções versionadas com autor e horário ficam no backlog pós-entrega. Cada evidência referencia o anexo e, quando aplicável, intervalo temporal ou região da imagem. Observações contêm código, descrição, valor/unidade opcionais e referências às evidências. Não inventar confiança numérica quando o processador não a fornece.
 
 ## Processamento
 
@@ -24,9 +24,9 @@ Reutilizar análises concluídas somente no mesmo escopo autorizado, quando hash
 
 ## Limites iniciais propostos
 
-- Documento: PDF, até 25 MiB.
+- Documento: PDF, até 25 MiB no armazenamento; OCR F0 limitado a 4 MB e duas páginas.
 - Imagem: JPEG e PNG, até 10 MiB e 25 megapixels.
-- Áudio: WAV e MP3, até 25 MiB e 120 segundos. Não impor duração mínima.
+- Áudio: WAV, MP3 e OGG/Opus, até 25 MiB e 120 segundos. Não impor duração mínima.
 - Vídeo: MP4, até 100 MiB e 120 segundos; validar contêiner e codec no backend.
 - Um arquivo por requisição; permitir vários anexos sucessivos na conversa.
 - Concorrência de processamento: uma tarefa por vez na primeira versão.

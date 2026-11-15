@@ -14,6 +14,7 @@ from tech_ai.errors import (
     AssistantError,
     ConfigurationError,
     DatabaseConnectionError,
+    DocumentOcrError,
     EmbeddingError,
     KnowledgeRetrievalError,
     KnowledgeStoreError,
@@ -53,6 +54,16 @@ def _build_parser(settings: Settings) -> argparse.ArgumentParser:
     subcommands.add_parser(
         "check-language",
         help="Executa uma análise Azure pequena com texto fictício.",
+    )
+    document_parser = subcommands.add_parser(
+        "check-document",
+        help="Executa OCR Azure em um PDF, PNG ou JPEG fictício.",
+    )
+    document_parser.add_argument(
+        "--file",
+        type=Path,
+        required=True,
+        help="Documento fictício com até 4 MB e, no caso de PDF, até duas páginas úteis.",
     )
     inspect_parser = subcommands.add_parser(
         "inspect-model",
@@ -247,6 +258,40 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             )
             return 0
+        if arguments.command == "check-document":
+            from tech_ai.config.azure import AzureSettings
+            from tech_ai.integrations.documents.azure import AzureDocumentReader
+
+            azure = AzureSettings.from_environment()
+            if not azure.document_enabled:
+                raise ConfigurationError(
+                    "Ative TECH_AI_AZURE_DOCUMENT_ENABLED para o diagnóstico."
+                )
+            reader = AzureDocumentReader(
+                key=azure.document_key,
+                endpoint=azure.document_endpoint,
+                max_pages=min(azure.max_document_pages, 2),
+                max_concurrent_requests=azure.max_concurrent_requests,
+            )
+            ocr_result = reader.read(
+                arguments.file,
+                content_type=_document_content_type(arguments.file),
+            )
+            print(
+                json.dumps(
+                    {
+                        "status": "ok",
+                        "data": "arquivo fictício local",
+                        "pages": len(ocr_result.pages),
+                        "characters": len(ocr_result.text),
+                        "text": ocr_result.text,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
         if arguments.command == "inspect-model":
             artifact = inspect_model_artifact(arguments.manifest)
             print(artifact.to_json())
@@ -303,6 +348,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         AssistantError,
         ConfigurationError,
         DatabaseConnectionError,
+        DocumentOcrError,
         EmbeddingError,
         KnowledgeRetrievalError,
         KnowledgeStoreError,
@@ -337,3 +383,16 @@ def _new_wav_output(path: Path) -> Path:
     if path.exists():
         raise ConfigurationError("O arquivo de saída já existe; escolha outro caminho.")
     return path
+
+
+def _document_content_type(path: Path) -> str:
+    content_types = {
+        ".pdf": "application/pdf",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+    }
+    content_type = content_types.get(path.suffix.casefold())
+    if content_type is None:
+        raise ConfigurationError("O diagnóstico aceita apenas PDF, PNG ou JPEG.")
+    return content_type

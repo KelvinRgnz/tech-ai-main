@@ -33,6 +33,10 @@ class LanguageAnalysisError(RuntimeError):
     """Falha sanitizada ao analisar texto no provedor configurado."""
 
 
+class DocumentOcrError(RuntimeError):
+    """Falha sanitizada ao extrair texto de um documento."""
+
+
 class ConfigurationError(ValueError):
     """Indica uma configuração ausente ou inválida."""
 

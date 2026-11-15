@@ -11,7 +11,7 @@ def test_azure_is_disabled_with_conservative_defaults() -> None:
     assert not settings.document_enabled
     assert settings.speech_region == "brazilsouth"
     assert settings.max_audio_seconds == 120
-    assert settings.max_document_pages == 10
+    assert settings.max_document_pages == 2
     assert settings.max_text_records_per_analysis == 20
     assert settings.max_concurrent_requests == 1
 

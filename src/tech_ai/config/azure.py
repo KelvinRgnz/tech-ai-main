@@ -61,7 +61,7 @@ class AzureSettings:
     document_key: str = field(default="", repr=False)
     document_endpoint: str = ""
     max_audio_seconds: int = 120
-    max_document_pages: int = 10
+    max_document_pages: int = 2
     max_text_records_per_analysis: int = 20
     max_concurrent_requests: int = 1
 
@@ -148,7 +148,7 @@ class AzureSettings:
                 "TECH_AI_AZURE_MAX_AUDIO_SECONDS",
             ),
             max_document_pages=_positive_integer(
-                values.get("TECH_AI_AZURE_MAX_DOCUMENT_PAGES", "10"),
+                values.get("TECH_AI_AZURE_MAX_DOCUMENT_PAGES", "2"),
                 "TECH_AI_AZURE_MAX_DOCUMENT_PAGES",
             ),
             max_text_records_per_analysis=_positive_integer(

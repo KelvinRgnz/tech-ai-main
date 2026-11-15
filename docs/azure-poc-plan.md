@@ -1,10 +1,10 @@
 # Plano Azure da POC
 
 Atualizado em 15 de novembro de 2026. A assinatura gratuita foi confirmada, um budget mensal de
-R$ 20 foi criado e os recursos F0 `speech-tech-ai-poc-mikael` e
-`language-tech-ai-poc-mikael` foram provisionados no grupo `rg-tech-ai-poc`, em Brazil South. Os
-diagnósticos reais validaram Speech, análise de sentimento e extração de frases-chave com dados
-fictícios.
+R$ 20 foi criado e os recursos F0 `speech-tech-ai-poc-mikael`,
+`language-tech-ai-poc-mikael` e `document-tech-ai-poc-mikael` foram provisionados no grupo
+`rg-tech-ai-poc`, em Brazil South. Os diagnósticos reais validaram Speech, análise de sentimento,
+extração de frases-chave e OCR com dados fictícios.
 
 ## Serviços e faixas gratuitas verificadas
 
@@ -54,7 +54,7 @@ devem existir apenas no `.env` local. O navegador, logs, banco e Git nunca receb
 Limites iniciais antes de qualquer chamada Azure:
 
 - áudio: no máximo 120 segundos;
-- documento: no máximo 10 páginas por análise;
+- documento no F0: no máximo 4 MB e somente as duas primeiras páginas por análise;
 - Language: no máximo 20 registros de texto por análise;
 - concorrência: uma chamada por vez.
 
@@ -67,8 +67,8 @@ Estimativa conservadora para até 20 áudios de demonstração, cada um limitado
 
 ## Provisionamento proposto
 
-Os serviços são provisionados um por vez. Speech F0 e Language F0 já foram criados e suas chaves
-estão somente no `.env` local. Document Intelligence permanece pendente. O cliente Speech usa o
+Os serviços foram provisionados um por vez. Speech F0, Language F0 e Document Intelligence F0 já
+foram criados e suas chaves estão somente no `.env` local. O cliente Speech usa o
 fluxo em tempo real, limita duração a 120 s e concorrência a uma chamada, e reaproveita o resultado
 persistido do mesmo anexo. O Language analisa a transcrição em `pt-BR`, extraindo frases-chave e
 sentimento textual sem atribuir significado diagnóstico ao resultado.
@@ -81,6 +81,17 @@ duas operações pequenas do Speech F0 (síntese e transcrição) e nunca imprim
 empacotado no ambiente converte cada arquivo localmente para WAV PCM 16 kHz mono antes do Speech;
 o WAV intermediário é removido mesmo em caso de falha. O comando `tech-ai check-language` valida
 sentimento e frases-chave com um texto fictício e nunca imprime chave ou endpoint.
+
+O OCR escolhido é o `prebuilt-read` do Azure Document Intelligence v4.0. O comando
+`tech-ai check-document --file ARQUIVO` aceita apenas PDF, PNG ou JPEG fictício, respeita os
+limites do F0 e imprime o texto original reconhecido para revisão. Documentos reais ou com dados
+pessoais não devem ser usados no diagnóstico.
+
+Validação real: uma prescrição fictícia de uma página e 51,8 KiB produziu 496 caracteres no
+`prebuilt-read`. O mesmo PDF foi anexado pela interface, permaneceu isolado no paciente de origem
+e reapareceu após recarregar a página sem repetir o OCR. Cabeçalhos e rodapés impressos pelo
+navegador também foram reconhecidos, reforçando a necessidade de revisão humana antes de qualquer
+estruturação.
 
 Critério experimental de pausas: intervalo mínimo de 0,8 s entre o fim de uma palavra reconhecida
 e o início da seguinte. O relatório mostra quantidade e maior intervalo. Esse sinal não permite,
