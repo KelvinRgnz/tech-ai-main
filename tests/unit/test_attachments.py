@@ -11,14 +11,20 @@ from fastapi.testclient import TestClient
 
 from tech_ai.api.app import create_app
 from tech_ai.config.settings import AuthSettings, Settings
-from tech_ai.errors import AttachmentStorageError, AttachmentValidationError
+from tech_ai.errors import (
+    AttachmentStorageError,
+    AttachmentValidationError,
+    SpeechTranscriptionError,
+)
 from tech_ai.integrations.auth.password import hash_password
 from tech_ai.integrations.local_attachment_storage import LocalAttachmentStorage
+from tech_ai.integrations.speech.client import SpeechTranscriber, SpeechTranscript, WordTiming
 from tech_ai.models.attachment import AttachmentAnalysis, StoredAttachment
 from tech_ai.services.attachment_service import AttachmentService
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"academic-image"
 PDF = b"%PDF-1.7\n% academic fictional report\n%%EOF"
+WAV = b"RIFF" + b"\x00\x00\x00\x00" + b"WAVE" + b"academic-audio"
 PASSWORD = "test-password"
 
 
@@ -77,13 +83,44 @@ class FailingAttachments(MemoryAttachments):
         raise RuntimeError("database offline")
 
 
+class FakeSpeechTranscriber:
+    def __init__(self) -> None:
+        self.calls: list[tuple[Path, str]] = []
+        self.error: SpeechTranscriptionError | None = None
+
+    def transcribe(self, path: Path, *, content_type: str) -> SpeechTranscript:
+        self.calls.append((path, content_type))
+        if self.error is not None:
+            raise self.error
+        return SpeechTranscript(
+            text="Estou com dificuldade para completar o exercício.",
+            language="pt-BR",
+            duration_seconds=3.2,
+            words=(
+                WordTiming("Estou", 0.0, 0.3),
+                WordTiming("com", 0.4, 0.2),
+                WordTiming("dificuldade", 1.8, 0.5),
+                WordTiming("exercício", 2.7, 0.5),
+            ),
+        )
+
+
 async def stream(data: bytes) -> AsyncIterator[bytes]:
     yield data
 
 
-def build_client(repository: MemoryAttachments, root: Path) -> TestClient:
+def build_client(
+    repository: MemoryAttachments,
+    root: Path,
+    *,
+    transcriber: SpeechTranscriber | None = None,
+) -> TestClient:
     password_hash = hash_password(PASSWORD)
-    service = AttachmentService(repository, LocalAttachmentStorage(root))
+    service = AttachmentService(
+        repository,
+        LocalAttachmentStorage(root),
+        audio_transcriber=transcriber,
+    )
     client = TestClient(
         create_app(
             settings=Settings(),
@@ -156,6 +193,63 @@ def test_upload_accepts_pdf_as_document(tmp_path: Path) -> None:
     )
     assert processed.status_code == 200
     assert processed.json()["analysis"]["summary"].startswith("Documento PDF")
+
+
+def test_audio_uses_azure_transcriber_reports_pauses_and_reuses_result(
+    tmp_path: Path,
+) -> None:
+    repository = MemoryAttachments()
+    patient_id = uuid4()
+    repository.add_patient("alice", patient_id)
+    transcriber = FakeSpeechTranscriber()
+    client = build_client(repository, tmp_path, transcriber=transcriber)
+    uploaded = client.post(
+        f"/api/patients/{patient_id}/attachments?filename=relato.wav",
+        content=WAV,
+        headers={"Content-Type": "audio/wav"},
+    ).json()
+
+    first = client.post(
+        f"/api/patients/{patient_id}/attachments/{uploaded['id']}/process"
+    )
+    second = client.post(
+        f"/api/patients/{patient_id}/attachments/{uploaded['id']}/process"
+    )
+
+    assert first.status_code == 200
+    analysis = first.json()["analysis"]
+    assert analysis["status"] == "completed"
+    assert analysis["processor_name"] == "azure-speech-realtime"
+    assert "dificuldade" in analysis["summary"]
+    assert "pelo menos 0.8 s: 1" in " ".join(analysis["observations"])
+    assert "não permitem concluir" in " ".join(analysis["limitations"])
+    assert second.json() == first.json()
+    assert len(transcriber.calls) == 1
+    assert transcriber.calls[0][1] == "audio/wav"
+
+
+def test_audio_persists_sanitized_transcription_failure(tmp_path: Path) -> None:
+    repository = MemoryAttachments()
+    patient_id = uuid4()
+    repository.add_patient("alice", patient_id)
+    transcriber = FakeSpeechTranscriber()
+    transcriber.error = SpeechTranscriptionError("Nenhuma fala inteligível foi reconhecida.")
+    client = build_client(repository, tmp_path, transcriber=transcriber)
+    uploaded = client.post(
+        f"/api/patients/{patient_id}/attachments?filename=relato.wav",
+        content=WAV,
+        headers={"Content-Type": "audio/wav"},
+    ).json()
+
+    response = client.post(
+        f"/api/patients/{patient_id}/attachments/{uploaded['id']}/process"
+    )
+
+    assert response.status_code == 200
+    analysis = response.json()["analysis"]
+    assert analysis["status"] == "failed"
+    assert analysis["error_code"] == "speech_transcription_failed"
+    assert "Nenhuma fala" in analysis["limitations"][0]
 
 
 @pytest.mark.parametrize(

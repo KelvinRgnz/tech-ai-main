@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from tech_ai.config.attachments import AttachmentSettings
+from tech_ai.config.azure import AzureSettings
 from tech_ai.config.database import DatabaseSettings
 from tech_ai.config.settings import (
     AuthSettings,
@@ -18,6 +19,7 @@ from tech_ai.integrations.local_attachment_storage import LocalAttachmentStorage
 from tech_ai.integrations.postgres_attachments import PostgresAttachmentRepository
 from tech_ai.integrations.postgres_conversations import PostgresConversationRepository
 from tech_ai.integrations.postgres_patients import PostgresPatientRepository
+from tech_ai.integrations.speech.azure import AzureSpeechTranscriber
 from tech_ai.integrations.translation.mymemory import MyMemoryTranslationClient
 from tech_ai.services.attachment_service import AttachmentService
 from tech_ai.services.auth_service import AuthService
@@ -33,9 +35,21 @@ def build_patient_service() -> PatientService:
 
 
 def build_attachment_service() -> AttachmentService:
+    azure = AzureSettings.from_environment()
+    transcriber = (
+        AzureSpeechTranscriber(
+            key=azure.speech_key,
+            region=azure.speech_region,
+            max_audio_seconds=azure.max_audio_seconds,
+            max_concurrent_requests=azure.max_concurrent_requests,
+        )
+        if azure.speech_enabled
+        else None
+    )
     return AttachmentService(
         PostgresAttachmentRepository(DatabaseSettings.from_environment()),
         LocalAttachmentStorage(AttachmentSettings.from_environment().storage_dir),
+        audio_transcriber=transcriber,
     )
 
 

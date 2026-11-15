@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterable
 from contextlib import suppress
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -13,7 +14,9 @@ from tech_ai.errors import (
     AttachmentStorageError,
     AttachmentValidationError,
     PatientNotFoundError,
+    SpeechTranscriptionError,
 )
+from tech_ai.integrations.speech.client import SpeechTranscriber, SpeechTranscript
 from tech_ai.models.attachment import (
     AttachmentAnalysis,
     AttachmentModality,
@@ -51,9 +54,16 @@ _DECLARED_TYPES = {
 
 
 class AttachmentService:
-    def __init__(self, repository: AttachmentRepository, storage: AttachmentStorage) -> None:
+    def __init__(
+        self,
+        repository: AttachmentRepository,
+        storage: AttachmentStorage,
+        *,
+        audio_transcriber: SpeechTranscriber | None = None,
+    ) -> None:
         self._repository = repository
         self._storage = storage
+        self._audio_transcriber = audio_transcriber
 
     async def upload(
         self,
@@ -127,12 +137,72 @@ class AttachmentService:
             raise PatientNotFoundError("Paciente não encontrado.")
         return tuple(AttachmentView.from_stored(item) for item in attachments)
 
-    def process_simulated(
-        self, owner: str, patient_id: UUID, attachment_id: UUID
-    ) -> AttachmentView:
+    def process(self, owner: str, patient_id: UUID, attachment_id: UUID) -> AttachmentView:
         attachment = self._get(owner, patient_id, attachment_id)
         if attachment.analysis.status == "completed":
             return AttachmentView.from_stored(attachment)
+        transcriber = self._audio_transcriber
+        if attachment.modality == "audio" and transcriber is not None:
+            return self._process_audio(owner, patient_id, attachment, transcriber)
+        return self._process_simulated(owner, patient_id, attachment)
+
+    def _process_audio(
+        self,
+        owner: str,
+        patient_id: UUID,
+        attachment: StoredAttachment,
+        transcriber: SpeechTranscriber,
+    ) -> AttachmentView:
+        started = datetime.now(UTC)
+        try:
+            transcript = transcriber.transcribe(
+                self._storage.resolve(attachment.storage_key),
+                content_type=attachment.content_type,
+            )
+        except SpeechTranscriptionError as error:
+            finished = datetime.now(UTC)
+            analysis = AttachmentAnalysis(
+                attachment.analysis.id,
+                "failed",
+                "azure-speech-realtime",
+                "1.0",
+                attachment.analysis.attempt + 1,
+                "Não foi possível transcrever o áudio.",
+                (),
+                (
+                    str(error),
+                    "Nenhuma conclusão clínica foi produzida a partir deste áudio.",
+                ),
+                "speech_transcription_failed",
+                attachment.analysis.created_at,
+                started,
+                finished,
+            )
+            return self._save_analysis(owner, patient_id, attachment, analysis)
+
+        finished = datetime.now(UTC)
+        analysis = AttachmentAnalysis(
+            attachment.analysis.id,
+            "completed",
+            "azure-speech-realtime",
+            "1.0",
+            attachment.analysis.attempt + 1,
+            f"Transcrição: {transcript.text}",
+            _speech_observations(transcript),
+            _speech_limitations(transcript),
+            None,
+            attachment.analysis.created_at,
+            started,
+            finished,
+        )
+        return self._save_analysis(owner, patient_id, attachment, analysis)
+
+    def _process_simulated(
+        self,
+        owner: str,
+        patient_id: UUID,
+        attachment: StoredAttachment,
+    ) -> AttachmentView:
         now = datetime.now(UTC)
         modality_label = {
             "document": "Documento PDF",
@@ -160,24 +230,18 @@ class AttachmentService:
             now,
             now,
         )
-        if not self._repository.complete_analysis(
-            owner, patient_id, attachment_id, analysis
-        ):
+        return self._save_analysis(owner, patient_id, attachment, analysis)
+
+    def _save_analysis(
+        self,
+        owner: str,
+        patient_id: UUID,
+        attachment: StoredAttachment,
+        analysis: AttachmentAnalysis,
+    ) -> AttachmentView:
+        if not self._repository.complete_analysis(owner, patient_id, attachment.id, analysis):
             raise AttachmentNotFoundError("Anexo não encontrado.")
-        return AttachmentView.from_stored(
-            StoredAttachment(
-                attachment.id,
-                attachment.conversation_id,
-                attachment.original_name,
-                attachment.storage_key,
-                attachment.sha256,
-                attachment.modality,
-                attachment.content_type,
-                attachment.size_bytes,
-                attachment.created_at,
-                analysis,
-            )
-        )
+        return AttachmentView.from_stored(replace(attachment, analysis=analysis))
 
     def content(self, owner: str, patient_id: UUID, attachment_id: UUID) -> tuple[Path, str, str]:
         attachment = self._get(owner, patient_id, attachment_id)
@@ -231,3 +295,45 @@ def _detect_content(header: bytes) -> tuple[AttachmentModality, str]:
     if len(header) >= 12 and header[4:8] == b"ftyp":
         return "video", "video/mp4"
     raise AttachmentValidationError("O conteúdo do arquivo não corresponde a um formato aceito.")
+
+
+def _speech_observations(transcript: SpeechTranscript) -> tuple[str, ...]:
+    observations = [
+        f"Idioma de reconhecimento: {transcript.language}.",
+        f"Duração transcrita aproximada: {transcript.duration_seconds:.1f} s.",
+    ]
+    threshold_seconds = 0.8
+    pauses = tuple(
+        (
+            previous.offset_seconds + previous.duration_seconds,
+            current.offset_seconds,
+        )
+        for previous, current in zip(transcript.words, transcript.words[1:], strict=False)
+        if current.offset_seconds
+        - (previous.offset_seconds + previous.duration_seconds)
+        >= threshold_seconds
+    )
+    observations.append(
+        f"Pausas entre palavras de pelo menos {threshold_seconds:.1f} s: {len(pauses)}."
+    )
+    if pauses:
+        longest_start, longest_end = max(pauses, key=lambda item: item[1] - item[0])
+        observations.append(
+            "Maior pausa estimada: "
+            f"{longest_end - longest_start:.1f} s, entre {longest_start:.1f} s e "
+            f"{longest_end:.1f} s."
+        )
+    if not transcript.words:
+        observations.append("O provedor não devolveu marcações temporais por palavra.")
+    return tuple(observations)
+
+
+def _speech_limitations(transcript: SpeechTranscript) -> tuple[str, ...]:
+    limitations = [
+        "As pausas são estimativas experimentais baseadas nas marcações do reconhecimento.",
+        "Pausas isoladas não permitem concluir desconforto ou dificuldade respiratória.",
+        "Ruído, dicção e múltiplos falantes podem alterar a transcrição e os intervalos.",
+    ]
+    if transcript.truncated:
+        limitations.append("O áudio foi interrompido ao atingir o limite de duração da POC.")
+    return tuple(limitations)

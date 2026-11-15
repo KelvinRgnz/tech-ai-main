@@ -155,11 +155,14 @@ def create_app(
     runtime_auth_settings = auth_settings or AuthSettings.from_environment()
     retrieval_holder: dict[str, KnowledgeRetrievalService] = {}
     assistant_holder: dict[str, MedicalAssistantService] = {}
+    attachment_holder: dict[str, AttachmentService] = {}
     auth = auth_service or build_auth_service(runtime_auth_settings)
     if retrieval_service is not None:
         retrieval_holder["service"] = retrieval_service
     if assistant_service is not None:
         assistant_holder["service"] = assistant_service
+    if attachment_service is not None:
+        attachment_holder["service"] = attachment_service
 
     def get_retrieval() -> KnowledgeRetrievalService:
         cached = retrieval_holder.get("service")
@@ -191,6 +194,14 @@ def create_app(
 
     def get_conversations() -> ConversationService:
         return conversation_service or build_conversation_service()
+
+    def get_attachments() -> AttachmentService:
+        cached = attachment_holder.get("service")
+        if cached is not None:
+            return cached
+        built = build_attachment_service()
+        attachment_holder["service"] = built
+        return built
 
     def append_message(
         user: AuthUser,
@@ -226,7 +237,7 @@ def create_app(
     )
     app.include_router(conversation_router(current_user, get_conversations))
     app.include_router(
-        attachment_router(current_user, lambda: attachment_service or build_attachment_service())
+        attachment_router(current_user, get_attachments)
     )
 
     @app.middleware("http")

@@ -25,6 +25,10 @@ class AttachmentStorageError(RuntimeError):
     """Falha sanitizada ao gravar ou recuperar o arquivo local."""
 
 
+class SpeechTranscriptionError(RuntimeError):
+    """Falha sanitizada ao transcrever um áudio no provedor configurado."""
+
+
 class ConfigurationError(ValueError):
     """Indica uma configuração ausente ou inválida."""
 

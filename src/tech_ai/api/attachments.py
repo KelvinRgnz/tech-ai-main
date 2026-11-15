@@ -1,4 +1,4 @@
-"""Upload autenticado e processamento simulado de anexos da conversa."""
+"""Upload autenticado e processamento multimodal de anexos da conversa."""
 
 from collections.abc import Callable
 from pathlib import Path
@@ -69,9 +69,7 @@ def attachment_router(
         user: AuthUser = Depends(current_user),
     ) -> AttachmentView:
         try:
-            return service_factory().process_simulated(
-                user.username, patient_id, attachment_id
-            )
+            return service_factory().process(user.username, patient_id, attachment_id)
         except Exception as error:
             raise map_error(error) from None
 

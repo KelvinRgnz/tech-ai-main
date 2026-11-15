@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from tech_ai.errors import (
     ModelArtifactReadError,
     ModelArtifactValidationError,
     ModelRuntimeError,
+    SpeechTranscriptionError,
     TranslationError,
 )
 from tech_ai.models.assistant import AssistantQuery
@@ -33,6 +35,15 @@ def _build_parser(settings: Settings) -> argparse.ArgumentParser:
     subcommands = parser.add_subparsers(dest="command", required=True)
     subcommands.add_parser("check-db", help="Verifica PostgreSQL sem alterar dados.")
     subcommands.add_parser("migrate-db", help="Aplica migrações da persistência PostgreSQL.")
+    speech_parser = subcommands.add_parser(
+        "check-speech",
+        help="Executa uma transcrição Azure pequena com dados fictícios.",
+    )
+    speech_parser.add_argument(
+        "--audio",
+        type=Path,
+        help="WAV ou MP3 local; sem a opção, gera um WAV fictício pelo próprio Speech F0.",
+    )
     inspect_parser = subcommands.add_parser(
         "inspect-model",
         help="Valida e exibe o manifesto de um modelo publicado.",
@@ -117,6 +128,58 @@ def main(argv: Sequence[str] | None = None) -> int:
             check_database()
             print("PostgreSQL: conexão TLS e consulta somente-leitura verificadas.")
             return 0
+        if arguments.command == "check-speech":
+            from tech_ai.config.azure import AzureSettings
+            from tech_ai.integrations.speech.azure import (
+                AzureSpeechTranscriber,
+                synthesize_fictitious_audio,
+            )
+
+            azure = AzureSettings.from_environment()
+            if not azure.speech_enabled:
+                raise ConfigurationError("Ative TECH_AI_AZURE_SPEECH_ENABLED para o diagnóstico.")
+            transcriber = AzureSpeechTranscriber(
+                key=azure.speech_key,
+                region=azure.speech_region,
+                max_audio_seconds=azure.max_audio_seconds,
+                max_concurrent_requests=azure.max_concurrent_requests,
+            )
+            if arguments.audio is not None:
+                audio_path = arguments.audio
+                content_type = _audio_content_type(audio_path)
+                transcript = transcriber.transcribe(audio_path, content_type=content_type)
+            else:
+                temporary_root = Path(".pytest-tmp")
+                temporary_root.mkdir(exist_ok=True)
+                with tempfile.TemporaryDirectory(
+                    prefix="speech-check-", dir=temporary_root
+                ) as temporary:
+                    audio_path = Path(temporary) / "relato-ficticio.wav"
+                    synthesize_fictitious_audio(
+                        audio_path,
+                        key=azure.speech_key,
+                        region=azure.speech_region,
+                    )
+                    transcript = transcriber.transcribe(
+                        audio_path,
+                        content_type="audio/wav",
+                    )
+            print(
+                json.dumps(
+                    {
+                        "status": "ok",
+                        "data": "fictícia" if arguments.audio is None else "arquivo local",
+                        "language": transcript.language,
+                        "duration_seconds": round(transcript.duration_seconds, 2),
+                        "words_with_timing": len(transcript.words),
+                        "transcript": transcript.text,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
         if arguments.command == "inspect-model":
             artifact = inspect_model_artifact(arguments.manifest)
             print(artifact.to_json())
@@ -179,6 +242,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         ModelArtifactReadError,
         ModelArtifactValidationError,
         ModelRuntimeError,
+        SpeechTranscriptionError,
         TranslationError,
     ) as error:
         print(f"Erro: {error}", file=sys.stderr)
@@ -186,3 +250,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     parser.error(f"Comando desconhecido: {arguments.command}")
     return 2
+
+
+def _audio_content_type(path: Path) -> str:
+    extension = path.suffix.casefold()
+    if extension == ".wav":
+        return "audio/wav"
+    if extension == ".mp3":
+        return "audio/mpeg"
+    raise ConfigurationError("O diagnóstico aceita apenas arquivos WAV ou MP3.")

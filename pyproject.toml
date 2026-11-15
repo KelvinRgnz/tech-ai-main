@@ -19,6 +19,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Cliente carregado apenas quando a integração Speech é habilitada.
+azure = [
+  "azure-cognitiveservices-speech>=1.47,<2",
+]
 # Runtime pesado de inferência local. A busca no ChromaDB e os testes não
 # precisam baixar PyTorch nem os pesos do modelo.
 runtime = [
@@ -98,6 +102,8 @@ omit = [
   "src/tech_ai/runner.py",
   # Exige PyTorch, GPU e pesos reais; a fronteira é coberta por testes leves.
   "src/tech_ai/integrations/llm/huggingface.py",
+  # Exige o SDK nativo e Azure; contrato, normalização e caso de uso têm testes locais.
+  "src/tech_ai/integrations/speech/azure.py",
 ]
 
 [tool.coverage.report]

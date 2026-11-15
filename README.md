@@ -228,7 +228,7 @@ Endpoints autenticados disponíveis (também em `/docs`):
 | `GET /api/patients/{id}/messages` | Carrega o histórico somente para o proprietário autenticado |
 | `POST /api/patients/{id}/attachments?filename=...` | Recebe um arquivo no corpo, valida e cria a análise pendente |
 | `GET /api/patients/{id}/attachments` | Lista anexos e resultados do paciente autorizado |
-| `POST /api/patients/{id}/attachments/{anexo}/process` | Executa o processador simulado local |
+| `POST /api/patients/{id}/attachments/{anexo}/process` | Usa Azure Speech para áudio habilitado; demais modalidades usam o simulador |
 | `GET /api/patients/{id}/attachments/{anexo}/content` | Entrega o arquivo somente ao proprietário autorizado |
 
 IDs são gerados no servidor. O cliente não pode escolher proprietário ou registrar
@@ -248,7 +248,31 @@ O botão **+** aceita PDF (até 25 MiB), JPEG/PNG (até 10 MiB), WAV/MP3 (até 2
 (até 100 MiB). O backend compara extensão, MIME declarado e assinatura do conteúdo, calcula SHA-256
 e gera a chave interna; o nome original é apenas apresentação. Os arquivos ficam em
 `TECH_AI_ATTACHMENT_DIR` (padrão `.data/attachments`) e somente os metadados ficam no Supabase.
-O processador desta etapa é explicitamente simulado, não extrai conteúdo clínico e não consome
-serviços Azure. O RAG existente continua independente do banco.
+Documentos, imagens e vídeos ainda usam o processador simulado e não extraem conteúdo clínico.
+Quando `TECH_AI_AZURE_SPEECH_ENABLED=true`, WAV e MP3 usam transcrição em tempo real do Azure
+Speech, preservam marcações temporais por palavra e produzem um relatório experimental de pausas.
+O resultado concluído fica persistido e consultar novamente o mesmo anexo não repete a chamada.
+O RAG existente continua independente do banco.
 Os testes usam repositório em memória e driver simulado; não substituem a validação da migração
 e da persistência no PostgreSQL real.
+
+## Azure da POC
+
+As integrações Azure permanecem desativadas por padrão e suas credenciais existem somente no
+`.env` local. O cliente opcional do Speech é instalado com
+`uv sync --dev --extra azure --no-cache`. Para o primeiro teste real, prefira WAV PCM mono de
+16 kHz e menos de 30 segundos. MP3 depende do GStreamer instalado no sistema.
+
+O critério experimental conta uma pausa quando há pelo menos 0,8 s entre palavras reconhecidas.
+Pausas isoladas não comprovam desconforto, fadiga ou dificuldade respiratória; ruído, dicção e
+múltiplos falantes podem alterar o resultado. Limites conservadores são validados antes das
+chamadas.
+
+Depois de configurar a chave, o diagnóstico integrado abaixo sintetiza um relato fictício curto e
+o transcreve. Ele realiza duas operações pequenas no Speech F0 e não imprime a credencial:
+
+```powershell
+uv run --no-sync --no-cache tech-ai check-speech
+```
+Consulte [`docs/azure-poc-plan.md`](docs/azure-poc-plan.md) para serviços, faixas gratuitas,
+controle de custos, variáveis e sequência de provisionamento.

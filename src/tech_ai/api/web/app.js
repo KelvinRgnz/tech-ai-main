@@ -164,7 +164,9 @@ function renderAttachment(attachment) {
   const completed = analysis.status === "completed";
   const failed = analysis.status === "failed";
   const statusLabel = completed
-    ? "Simulação concluída"
+    ? analysis.processor_name === "azure-speech-realtime"
+      ? "Transcrição concluída"
+      : "Simulação concluída"
     : failed
       ? "Falha no processamento"
       : "Aguardando processamento";
@@ -434,13 +436,15 @@ function showAttachmentError(error) {
 }
 
 async function processAttachment(attachmentId) {
-  attachmentFeedback.textContent = "Processando com o simulador local...";
+  attachmentFeedback.textContent = "Processando o anexo...";
   const processed = await requestJson(
     `/api/patients/${activePatient.id}/attachments/${attachmentId}/process`,
     { method: "POST" }
   );
   renderAttachment(processed);
-  attachmentFeedback.textContent = "Simulação concluída; nenhum serviço Azure foi consumido.";
+  attachmentFeedback.textContent = processed.analysis.processor_name === "azure-speech-realtime"
+    ? "Transcrição concluída com o Azure Speech."
+    : "Simulação local concluída.";
   statusCopy.textContent = `Conversa de ${activePatient.display_name}.`;
 }
 

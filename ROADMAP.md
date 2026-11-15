@@ -83,22 +83,31 @@ Depende da etapa 0.
 
 **Concluída quando:** um usuário consegue anexar um arquivo à conversa correta, acompanhar seu processamento simulado e recuperar o resultado após recarregar a página.
 
+**Status:** concluída e validada pelo usuário com upload real de PDF, processamento simulado e recuperação vinculada ao paciente no Supabase.
+
 ### Etapa 2 — Azure e controle de consumo
 
 Depende da etapa 0; deve preceder testes com serviços reais.
 
-- [ ] Confirmar crédito, moeda, data de expiração e condições da assinatura no portal.
-- [ ] Consultar preços, regiões e disponibilidade atuais dos serviços necessários.
+- [x] Confirmar crédito, moeda, data de expiração e condições da assinatura no portal.
+- [x] Consultar preços, regiões e disponibilidade atuais dos serviços necessários.
 - [ ] Estimar consumo para o conjunto de demonstração antes de provisionar recursos.
-- [ ] Provisionar Speech to Text e o serviço correspondente ao Text Analytics requerido pelo PDF.
-- [ ] Configurar credenciais por ambiente, sem incluí-las no Git, no navegador ou nos logs.
-- [ ] Criar clientes intercambiáveis: simulado para desenvolvimento e Azure para integração.
-- [ ] Configurar limites locais de duração, volume de arquivos e concorrência.
+- [x] Provisionar Speech to Text F0 em Brazil South.
+- [ ] Provisionar o serviço correspondente ao Text Analytics requerido pelo PDF.
+- [x] Configurar credenciais por ambiente, sem incluí-las no Git, no navegador ou nos logs.
+- [x] Criar clientes intercambiáveis: simulado para desenvolvimento e Azure para integração.
+- [x] Configurar limites locais de duração, volume de arquivos e concorrência.
 - [ ] Registrar chamadas e reutilizar resultados por arquivo/configuração/versão do processador.
-- [ ] Configurar alertas de orçamento e um procedimento para interromper o processamento pago.
-- [ ] Documentar que alertas de orçamento não equivalem, por si só, a bloqueio automático de gastos.
+- [x] Configurar alertas de orçamento e um procedimento para interromper o processamento pago.
+- [x] Documentar que alertas de orçamento não equivalem, por si só, a bloqueio automático de gastos.
 
 **Concluída quando:** uma chamada pequena funciona, o resultado é reutilizado e o consumo pode ser acompanhado. Não presumir que todo recurso ficará dentro do crédito gratuito.
+
+**Validação real em 15/11/2026:** budget mensal de R$ 20 configurado; recurso
+`speech-tech-ai-poc-mikael` criado no grupo `rg-tech-ai-poc`; `tech-ai check-speech` sintetizou e
+transcreveu um relato fictício de 12,23 s em `pt-BR`, devolvendo 24 palavras com marcações
+temporais. O resultado não continha dados pessoais. Language e Document Intelligence permanecem
+pendentes, portanto a etapa ainda não está concluída.
 
 ### Etapa 3 — Imagens de laudos e prescrições
 
@@ -119,9 +128,9 @@ Depende da etapa 1 e, caso o OCR escolhido seja em nuvem, da etapa 2.
 Depende das etapas 1 e 2.
 
 - [ ] Preparar gravações encenadas de fala contínua, pausas intencionais e ruído de fundo.
-- [ ] Transcrever com Azure Speech to Text e preservar marcações temporais disponíveis.
+- [x] Implementar transcrição com Azure Speech to Text e preservar marcações temporais disponíveis.
 - [ ] Analisar o áudio original para detectar segmentos de fala e silêncio.
-- [ ] Definir e documentar os critérios experimentais para contabilizar pausas.
+- [x] Definir e documentar os critérios experimentais para contabilizar pausas.
 - [ ] Produzir duração total, tempo de fala, pausas e seus intervalos; indicar limitações de ruído e múltiplos falantes.
 - [ ] Usar Azure Text Analytics para termos críticos e sentimentos no texto transcrito.
 - [ ] Definir uma abordagem experimental adicional para alterações vocais; pausas e sentimento textual, isoladamente, não validam detecção de fadiga ou dificuldade respiratória.
@@ -188,7 +197,7 @@ Depende das etapas anteriores.
 - [ ] Medir erros de extração/transcrição, acerto de eventos, falsos alertas, latência e consumo quando aplicável.
 - [ ] Verificar falhas: arquivo incompatível, serviço indisponível, timeout, ausência de evidência e reinício durante processamento.
 - [ ] Executar `uv run ruff check .`, `uv run mypy` e `uv run pytest` dentro de `tech-ai-main`.
-- [ ] Fazer teste integrado real com Azure usando volume controlado; testes simulados não substituem essa validação.
+- [x] Fazer teste integrado real com Azure Speech usando volume controlado e dados fictícios.
 - [ ] Atualizar README com instalação, execução, configuração e reprodução dos exemplos.
 - [ ] Produzir relatório técnico: fluxo multimodal, modelos, critérios, resultados, exemplos e limitações.
 - [ ] Preparar vídeo de até 15 minutos com áudio, vídeo, anomalias, Azure e fluxo final de alertas.
@@ -257,6 +266,10 @@ A API agora expõe as capacidades do ambiente. A interface desabilita o modo com
 
 Implementados upload autenticado por paciente, botão **+**, prévia de imagem/áudio/vídeo, armazenamento local com chave gerada pelo servidor e metadados PostgreSQL. O backend aceita JPEG/PNG, WAV/MP3 e MP4 dentro dos limites definidos, compara extensão, MIME e assinatura do conteúdo, calcula SHA-256 e não expõe chave física ou hash na API. O acesso ao arquivo, a listagem e o processamento sempre filtram proprietário e paciente.
 
-O primeiro processador é simulado: registra estado, tentativa, resumo, observações e limitações, sem extrair informação clínica e sem consumir Azure. A migração 3 cria `attachments` e `analyses`; ainda precisa ser aplicada e validada no Supabase real. Tarefas persistidas em segundo plano permanecem para uma fatia posterior. Validação local: JavaScript sem erro de sintaxe; Ruff e mypy aprovados; 182 testes aprovados, cobertura acima de 93%. A etapa 1 depende agora do teste visual real após a migração.
+O primeiro processador é simulado: registra estado, tentativa, resumo, observações e limitações, sem extrair informação clínica e sem consumir Azure. A migração 3 cria `attachments` e `analyses`. O usuário confirmou as migrações 3 e 4 no Supabase por meio de um upload real de PDF, com processamento e recuperação funcionando na interface. Tarefas persistidas em segundo plano permanecem para uma fatia posterior. Validação local: JavaScript sem erro de sintaxe; Ruff e mypy aprovados; 182 testes aprovados, cobertura acima de 93%.
 
 PDF foi incluído como modalidade `document`, com limite de 25 MiB, validação da assinatura `%PDF`, persistência e visualização embutida. A migração 4 amplia a restrição de modalidades e funciona tanto para quem já aplicou a migração 3 quanto para uma instalação nova. O OCR real do PDF permanece na etapa de laudos e prescrições. Validação atual: 185 testes aprovados e cobertura de 93,54%.
+
+### Início da etapa Azure
+
+Preços, faixas gratuitas, regiões e comportamento de budget/spending limit foram conferidos na documentação oficial em 15 de novembro de 2026. Criada configuração separada por serviço, desativada por padrão, com segredos ocultos da representação e limites conservadores de duração, páginas, registros de texto e concorrência. O plano está em `docs/azure-poc-plan.md`. Nenhum recurso foi provisionado e nenhuma chamada Azure foi realizada.
