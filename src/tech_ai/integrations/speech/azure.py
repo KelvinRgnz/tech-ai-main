@@ -11,9 +11,10 @@ from typing import Any, cast
 
 from tech_ai.errors import ConfigurationError, SpeechTranscriptionError
 from tech_ai.integrations.speech.client import SpeechTranscript, WordTiming
+from tech_ai.integrations.speech.conversion import transcription_audio
 
 _TICKS_PER_SECOND = 10_000_000
-_SUPPORTED_CONTENT_TYPES = {"audio/wav", "audio/mpeg"}
+_SUPPORTED_CONTENT_TYPES = {"audio/wav", "audio/mpeg", "audio/ogg"}
 _FICTIONAL_SSML = """<speak version="1.0" xml:lang="pt-BR">
 <voice name="pt-BR-FranciscaNeural">
 Paciente fictício em sessão de fisioterapia. Estou realizando o exercício de sentar e levantar.
@@ -72,33 +73,6 @@ def _detail_timings(raw_json: str) -> tuple[tuple[WordTiming, ...], float]:
     return tuple(timings), max(end, offset + duration)
 
 
-def _compressed_audio_config(
-    speechsdk: Any, path: Path
-) -> tuple[Any, object]:
-    class BinaryFileReaderCallback(speechsdk.audio.PullAudioInputStreamCallback):  # type: ignore[misc]
-        def __init__(self, source: Path) -> None:
-            super().__init__()
-            self._source = source.open("rb")
-
-        def read(self, buffer: memoryview) -> int:
-            data = self._source.read(buffer.nbytes)
-            buffer[: len(data)] = data
-            return len(data)
-
-        def close(self) -> None:
-            self._source.close()
-
-    callback = BinaryFileReaderCallback(path)
-    compressed_format = speechsdk.audio.AudioStreamFormat(
-        compressed_stream_format=speechsdk.AudioStreamContainerFormat.MP3
-    )
-    stream = speechsdk.audio.PullAudioInputStream(
-        stream_format=compressed_format,
-        pull_stream_callback=callback,
-    )
-    return speechsdk.audio.AudioConfig(stream=stream), callback
-
-
 def synthesize_fictitious_audio(
     path: Path,
     *,
@@ -148,25 +122,19 @@ class AzureSpeechTranscriber:
             raise SpeechTranscriptionError("Formato de áudio não suportado pelo transcritor.")
         if not path.is_file():
             raise SpeechTranscriptionError("Arquivo de áudio indisponível para transcrição.")
-        with self._semaphore:
-            return self._transcribe(path, content_type=content_type)
+        with self._semaphore, transcription_audio(
+            path, content_type=content_type
+        ) as transcription_path:
+            return self._transcribe(transcription_path)
 
-    def _transcribe(self, path: Path, *, content_type: str) -> SpeechTranscript:
+    def _transcribe(self, path: Path) -> SpeechTranscript:
         speechsdk = _speech_sdk()
         speech_config = speechsdk.SpeechConfig(subscription=self._key, region=self._region)
         speech_config.speech_recognition_language = self._language
         speech_config.output_format = speechsdk.OutputFormat.Detailed
         speech_config.request_word_level_timestamps()
-        if content_type == "audio/mpeg":
-            try:
-                audio_config, stream_owner = _compressed_audio_config(speechsdk, path)
-            except Exception as error:
-                raise SpeechTranscriptionError(
-                    "Não foi possível abrir o MP3. Verifique a instalação do GStreamer."
-                ) from error
-        else:
-            audio_config = speechsdk.audio.AudioConfig(filename=str(path))
-            stream_owner = None
+        audio_config = speechsdk.audio.AudioConfig(filename=str(path))
+        stream_owner = None
 
         recognizer = speechsdk.SpeechRecognizer(
             speech_config=speech_config,

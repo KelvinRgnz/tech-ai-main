@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from tech_ai.integrations.language.client import SentimentConfidence, TextAnalysis
 from tech_ai.integrations.speech.client import SpeechTranscript, WordTiming
 from tech_ai.runner import main
 
@@ -109,3 +110,74 @@ def test_check_speech_can_keep_fictitious_audio(
     payload = json.loads(capsys.readouterr().out)
     assert output_path.is_file()
     assert payload["audio_file"] == str(output_path.resolve())
+
+
+def test_check_language_uses_fictitious_text_without_exposing_key(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    class FakeAnalyzer:
+        def __init__(self, **_configuration: object) -> None:
+            pass
+
+        def analyze(self, text: str, *, language: str = "pt-BR") -> TextAnalysis:
+            calls.append((text, language))
+            return TextAnalysis(
+                sentiment="mixed",
+                confidence=SentimentConfidence(0.4, 0.2, 0.4),
+                key_phrases=("relato fictício", "exercício"),
+            )
+
+    monkeypatch.setenv("TECH_AI_AZURE_LANGUAGE_ENABLED", "true")
+    monkeypatch.setenv("TECH_AI_AZURE_LANGUAGE_KEY", "private-language-key")
+    monkeypatch.setenv(
+        "TECH_AI_AZURE_LANGUAGE_ENDPOINT",
+        "https://language.example.azure.com/",
+    )
+    monkeypatch.setattr(
+        "tech_ai.integrations.language.azure.AzureLanguageAnalyzer",
+        FakeAnalyzer,
+    )
+
+    assert main(["check-language"]) == 0
+
+    output = capsys.readouterr().out
+    payload = json.loads(output)
+    assert payload["status"] == "ok"
+    assert payload["sentiment"] == "mixed"
+    assert payload["key_phrases"] == ["relato fictício", "exercício"]
+    assert "private-language-key" not in output
+    assert calls[0][1] == "pt-BR"
+
+
+def test_check_speech_accepts_local_ogg(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "whatsapp.ogg"
+    source.write_bytes(b"OggS-OpusHead")
+    calls: list[tuple[Path, str]] = []
+
+    class FakeTranscriber:
+        def __init__(self, **_configuration: object) -> None:
+            pass
+
+        def transcribe(self, path: Path, *, content_type: str) -> SpeechTranscript:
+            calls.append((path, content_type))
+            return SpeechTranscript("Áudio do WhatsApp.", "pt-BR", 2.0, ())
+
+    monkeypatch.setenv("TECH_AI_AZURE_SPEECH_ENABLED", "true")
+    monkeypatch.setenv("TECH_AI_AZURE_SPEECH_KEY", "private-test-key")
+    monkeypatch.setenv("TECH_AI_AZURE_SPEECH_REGION", "brazilsouth")
+    monkeypatch.setattr(
+        "tech_ai.integrations.speech.azure.AzureSpeechTranscriber",
+        FakeTranscriber,
+    )
+
+    assert main(["check-speech", "--audio", str(source)]) == 0
+
+    assert json.loads(capsys.readouterr().out)["transcript"] == "Áudio do WhatsApp."
+    assert calls == [(source, "audio/ogg")]

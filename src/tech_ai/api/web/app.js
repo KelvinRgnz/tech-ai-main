@@ -164,7 +164,7 @@ function renderAttachment(attachment) {
   const completed = analysis.status === "completed";
   const failed = analysis.status === "failed";
   const statusLabel = completed
-    ? analysis.processor_name === "azure-speech-realtime"
+    ? analysis.processor_name.startsWith("azure-speech")
       ? "Transcrição concluída"
       : "Simulação concluída"
     : failed
@@ -426,6 +426,7 @@ function declaredType(file) {
     png: "image/png",
     wav: "audio/wav",
     mp3: "audio/mpeg",
+    ogg: "audio/ogg",
     mp4: "video/mp4",
   }[extension] || "application/octet-stream";
 }
@@ -442,8 +443,10 @@ async function processAttachment(attachmentId) {
     { method: "POST" }
   );
   renderAttachment(processed);
-  attachmentFeedback.textContent = processed.analysis.processor_name === "azure-speech-realtime"
-    ? "Transcrição concluída com o Azure Speech."
+  attachmentFeedback.textContent = processed.analysis.processor_name.startsWith("azure-speech")
+    ? processed.analysis.processor_name === "azure-speech-language"
+      ? "Transcrição e análise textual concluídas com a Azure."
+      : "Transcrição concluída com o Azure Speech."
     : "Simulação local concluída.";
   statusCopy.textContent = `Conversa de ${activePatient.display_name}.`;
 }

@@ -56,9 +56,9 @@ def test_transcriber_rejects_unsupported_or_missing_file(tmp_path: Path) -> None
         max_audio_seconds=120,
         max_concurrent_requests=1,
     )
-    audio = tmp_path / "audio.ogg"
+    audio = tmp_path / "audio.flac"
     audio.write_bytes(b"audio")
     with pytest.raises(SpeechTranscriptionError, match="Formato"):
-        transcriber.transcribe(audio, content_type="audio/ogg")
+        transcriber.transcribe(audio, content_type="audio/flac")
     with pytest.raises(SpeechTranscriptionError, match="indisponível"):
         transcriber.transcribe(tmp_path / "missing.wav", content_type="audio/wav")

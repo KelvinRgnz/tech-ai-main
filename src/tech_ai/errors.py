@@ -29,6 +29,10 @@ class SpeechTranscriptionError(RuntimeError):
     """Falha sanitizada ao transcrever um áudio no provedor configurado."""
 
 
+class LanguageAnalysisError(RuntimeError):
+    """Falha sanitizada ao analisar texto no provedor configurado."""
+
+
 class ConfigurationError(ValueError):
     """Indica uma configuração ausente ou inválida."""
 

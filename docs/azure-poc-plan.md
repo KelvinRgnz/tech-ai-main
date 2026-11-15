@@ -1,9 +1,10 @@
 # Plano Azure da POC
 
 Atualizado em 15 de novembro de 2026. A assinatura gratuita foi confirmada, um budget mensal de
-R$ 20 foi criado e o recurso Speech F0 `speech-tech-ai-poc-mikael` foi provisionado no grupo
-`rg-tech-ai-poc`, em Brazil South. O diagnóstico integrado real foi concluído com um relato
-fictício sintetizado e transcrito: 12,23 s, 24 palavras temporizadas e idioma `pt-BR`.
+R$ 20 foi criado e os recursos F0 `speech-tech-ai-poc-mikael` e
+`language-tech-ai-poc-mikael` foram provisionados no grupo `rg-tech-ai-poc`, em Brazil South. Os
+diagnósticos reais validaram Speech, análise de sentimento e extração de frases-chave com dados
+fictícios.
 
 ## Serviços e faixas gratuitas verificadas
 
@@ -57,16 +58,29 @@ Limites iniciais antes de qualquer chamada Azure:
 - Language: no máximo 20 registros de texto por análise;
 - concorrência: uma chamada por vez.
 
+Estimativa conservadora para até 20 áudios de demonstração, cada um limitado a 120 segundos:
+
+- Speech: até 40 minutos, antes de repetições, dentro das 5 horas mensais do F0;
+- Language: até 40 registros, considerando sentimento e frases-chave separadamente, dentro dos
+  5.000 registros mensais compartilhados do F0;
+- resultados concluídos são persistidos e não repetem chamadas ao reabrir ou recarregar a tela.
+
 ## Provisionamento proposto
 
-Os serviços são provisionados um por vez. Speech F0 já foi criado e sua chave está somente no
-`.env` local. Language e Document Intelligence permanecem pendentes. O cliente Speech usa o fluxo
-em tempo real, limita duração a 120 s e concorrência a uma chamada, e reaproveita o resultado
-persistido do mesmo anexo. O primeiro teste real deve usar WAV fictício com menos de 30 s.
+Os serviços são provisionados um por vez. Speech F0 e Language F0 já foram criados e suas chaves
+estão somente no `.env` local. Document Intelligence permanece pendente. O cliente Speech usa o
+fluxo em tempo real, limita duração a 120 s e concorrência a uma chamada, e reaproveita o resultado
+persistido do mesmo anexo. O Language analisa a transcrição em `pt-BR`, extraindo frases-chave e
+sentimento textual sem atribuir significado diagnóstico ao resultado.
 
 O comando `tech-ai check-speech` realiza o teste controlado sem dados pessoais: sintetiza um WAV
 temporário com uma pausa intencional, transcreve o arquivo e o remove ao terminar. O teste consome
 duas operações pequenas do Speech F0 (síntese e transcrição) e nunca imprime a chave.
+
+Áudios OGG/Opus gerados pelo WhatsApp são aceitos e preservados no formato original. Um FFmpeg
+empacotado no ambiente converte cada arquivo localmente para WAV PCM 16 kHz mono antes do Speech;
+o WAV intermediário é removido mesmo em caso de falha. O comando `tech-ai check-language` valida
+sentimento e frases-chave com um texto fictício e nunca imprime chave ou endpoint.
 
 Critério experimental de pausas: intervalo mínimo de 0,8 s entre o fim de uma palavra reconhecida
 e o início da seguinte. O relatório mostra quantidade e maior intervalo. Esse sinal não permite,

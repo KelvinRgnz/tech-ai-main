@@ -14,6 +14,7 @@ from tech_ai.config.settings import (
 )
 from tech_ai.integrations.chroma.knowledge_repository import ChromaKnowledgeRepository
 from tech_ai.integrations.embeddings.local_onnx import LocalOnnxEmbeddingClient
+from tech_ai.integrations.language.azure import AzureLanguageAnalyzer
 from tech_ai.integrations.llm.huggingface import HuggingFaceLlmClient
 from tech_ai.integrations.local_attachment_storage import LocalAttachmentStorage
 from tech_ai.integrations.postgres_attachments import PostgresAttachmentRepository
@@ -46,10 +47,20 @@ def build_attachment_service() -> AttachmentService:
         if azure.speech_enabled
         else None
     )
+    text_analyzer = (
+        AzureLanguageAnalyzer(
+            key=azure.language_key,
+            endpoint=azure.language_endpoint,
+            max_concurrent_requests=azure.max_concurrent_requests,
+        )
+        if azure.language_enabled
+        else None
+    )
     return AttachmentService(
         PostgresAttachmentRepository(DatabaseSettings.from_environment()),
         LocalAttachmentStorage(AttachmentSettings.from_environment().storage_dir),
         audio_transcriber=transcriber,
+        text_analyzer=text_analyzer,
     )
 
 

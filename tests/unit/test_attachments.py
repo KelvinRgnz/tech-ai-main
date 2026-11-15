@@ -14,9 +14,15 @@ from tech_ai.config.settings import AuthSettings, Settings
 from tech_ai.errors import (
     AttachmentStorageError,
     AttachmentValidationError,
+    LanguageAnalysisError,
     SpeechTranscriptionError,
 )
 from tech_ai.integrations.auth.password import hash_password
+from tech_ai.integrations.language.client import (
+    SentimentConfidence,
+    TextAnalysis,
+    TextAnalyzer,
+)
 from tech_ai.integrations.local_attachment_storage import LocalAttachmentStorage
 from tech_ai.integrations.speech.client import SpeechTranscriber, SpeechTranscript, WordTiming
 from tech_ai.models.attachment import AttachmentAnalysis, StoredAttachment
@@ -25,6 +31,7 @@ from tech_ai.services.attachment_service import AttachmentService
 PNG = b"\x89PNG\r\n\x1a\n" + b"academic-image"
 PDF = b"%PDF-1.7\n% academic fictional report\n%%EOF"
 WAV = b"RIFF" + b"\x00\x00\x00\x00" + b"WAVE" + b"academic-audio"
+OGG = b"OggS" + (b"\x00" * 24) + b"OpusHead" + b"academic-audio"
 PASSWORD = "test-password"
 
 
@@ -105,6 +112,22 @@ class FakeSpeechTranscriber:
         )
 
 
+class FakeTextAnalyzer:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+        self.error: LanguageAnalysisError | None = None
+
+    def analyze(self, text: str, *, language: str = "pt-BR") -> TextAnalysis:
+        self.calls.append((text, language))
+        if self.error is not None:
+            raise self.error
+        return TextAnalysis(
+            sentiment="negative",
+            confidence=SentimentConfidence(positive=0.04, neutral=0.16, negative=0.8),
+            key_phrases=("dificuldade", "exercício"),
+        )
+
+
 async def stream(data: bytes) -> AsyncIterator[bytes]:
     yield data
 
@@ -114,12 +137,14 @@ def build_client(
     root: Path,
     *,
     transcriber: SpeechTranscriber | None = None,
+    text_analyzer: TextAnalyzer | None = None,
 ) -> TestClient:
     password_hash = hash_password(PASSWORD)
     service = AttachmentService(
         repository,
         LocalAttachmentStorage(root),
         audio_transcriber=transcriber,
+        text_analyzer=text_analyzer,
     )
     client = TestClient(
         create_app(
@@ -228,6 +253,28 @@ def test_audio_uses_azure_transcriber_reports_pauses_and_reuses_result(
     assert transcriber.calls[0][1] == "audio/wav"
 
 
+def test_whatsapp_ogg_is_accepted_as_opus_audio(tmp_path: Path) -> None:
+    repository = MemoryAttachments()
+    patient_id = uuid4()
+    repository.add_patient("alice", patient_id)
+    transcriber = FakeSpeechTranscriber()
+    client = build_client(repository, tmp_path, transcriber=transcriber)
+
+    uploaded = client.post(
+        f"/api/patients/{patient_id}/attachments?filename=whatsapp.ogg",
+        content=OGG,
+        headers={"Content-Type": "audio/ogg"},
+    )
+    processed = client.post(
+        f"/api/patients/{patient_id}/attachments/{uploaded.json()['id']}/process"
+    )
+
+    assert uploaded.status_code == 201
+    assert uploaded.json()["content_type"] == "audio/ogg"
+    assert processed.json()["analysis"]["status"] == "completed"
+    assert transcriber.calls[0][1] == "audio/ogg"
+
+
 def test_audio_persists_sanitized_transcription_failure(tmp_path: Path) -> None:
     repository = MemoryAttachments()
     patient_id = uuid4()
@@ -250,6 +297,77 @@ def test_audio_persists_sanitized_transcription_failure(tmp_path: Path) -> None:
     assert analysis["status"] == "failed"
     assert analysis["error_code"] == "speech_transcription_failed"
     assert "Nenhuma fala" in analysis["limitations"][0]
+
+
+def test_audio_adds_language_analysis_without_repeating_cloud_calls(tmp_path: Path) -> None:
+    repository = MemoryAttachments()
+    patient_id = uuid4()
+    repository.add_patient("alice", patient_id)
+    transcriber = FakeSpeechTranscriber()
+    text_analyzer = FakeTextAnalyzer()
+    client = build_client(
+        repository,
+        tmp_path,
+        transcriber=transcriber,
+        text_analyzer=text_analyzer,
+    )
+    uploaded = client.post(
+        f"/api/patients/{patient_id}/attachments?filename=relato-language.wav",
+        content=WAV,
+        headers={"Content-Type": "audio/wav"},
+    ).json()
+
+    first = client.post(
+        f"/api/patients/{patient_id}/attachments/{uploaded['id']}/process"
+    )
+    second = client.post(
+        f"/api/patients/{patient_id}/attachments/{uploaded['id']}/process"
+    )
+
+    analysis = first.json()["analysis"]
+    rendered = " ".join(analysis["observations"])
+    assert analysis["processor_name"] == "azure-speech-language"
+    assert "dificuldade, exercício" in rendered
+    assert "negativo" in rendered
+    assert "80%" in rendered
+    assert "não o estado clínico" in " ".join(analysis["limitations"])
+    assert second.json() == first.json()
+    assert len(transcriber.calls) == 1
+    assert text_analyzer.calls == [
+        ("Estou com dificuldade para completar o exercício.", "pt-BR")
+    ]
+
+
+def test_audio_preserves_transcription_when_language_analysis_fails(tmp_path: Path) -> None:
+    repository = MemoryAttachments()
+    patient_id = uuid4()
+    repository.add_patient("alice", patient_id)
+    transcriber = FakeSpeechTranscriber()
+    text_analyzer = FakeTextAnalyzer()
+    text_analyzer.error = LanguageAnalysisError(
+        "O Azure Language não concluiu a análise textual."
+    )
+    client = build_client(
+        repository,
+        tmp_path,
+        transcriber=transcriber,
+        text_analyzer=text_analyzer,
+    )
+    uploaded = client.post(
+        f"/api/patients/{patient_id}/attachments?filename=relato-fallback.wav",
+        content=WAV,
+        headers={"Content-Type": "audio/wav"},
+    ).json()
+
+    response = client.post(
+        f"/api/patients/{patient_id}/attachments/{uploaded['id']}/process"
+    )
+
+    analysis = response.json()["analysis"]
+    assert analysis["status"] == "completed"
+    assert analysis["processor_name"] == "azure-speech-realtime"
+    assert "dificuldade" in analysis["summary"]
+    assert "preservada" in " ".join(analysis["limitations"])
 
 
 @pytest.mark.parametrize(

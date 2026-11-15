@@ -91,9 +91,9 @@ Depende da etapa 0; deve preceder testes com serviços reais.
 
 - [x] Confirmar crédito, moeda, data de expiração e condições da assinatura no portal.
 - [x] Consultar preços, regiões e disponibilidade atuais dos serviços necessários.
-- [ ] Estimar consumo para o conjunto de demonstração antes de provisionar recursos.
+- [x] Estimar consumo para o conjunto de demonstração antes de provisionar recursos.
 - [x] Provisionar Speech to Text F0 em Brazil South.
-- [ ] Provisionar o serviço correspondente ao Text Analytics requerido pelo PDF.
+- [x] Provisionar o serviço correspondente ao Text Analytics requerido pelo PDF.
 - [x] Configurar credenciais por ambiente, sem incluí-las no Git, no navegador ou nos logs.
 - [x] Criar clientes intercambiáveis: simulado para desenvolvimento e Azure para integração.
 - [x] Configurar limites locais de duração, volume de arquivos e concorrência.
@@ -106,8 +106,11 @@ Depende da etapa 0; deve preceder testes com serviços reais.
 **Validação real em 15/11/2026:** budget mensal de R$ 20 configurado; recurso
 `speech-tech-ai-poc-mikael` criado no grupo `rg-tech-ai-poc`; `tech-ai check-speech` sintetizou e
 transcreveu um relato fictício de 12,23 s em `pt-BR`, devolvendo 24 palavras com marcações
-temporais. O resultado não continha dados pessoais. Language e Document Intelligence permanecem
-pendentes, portanto a etapa ainda não está concluída.
+temporais. O recurso F0 `language-tech-ai-poc-mikael` também foi provisionado e o diagnóstico
+fictício devolveu sentimento negativo com 92% de confiança e três frases-chave. A estimativa para
+até 20 áudios de demonstração é de no máximo 40 minutos de Speech e 40 registros do Language,
+antes de repetições. Document Intelligence permanece pendente, portanto a etapa ainda não está
+concluída.
 
 ### Etapa 3 — Imagens de laudos e prescrições
 
@@ -132,7 +135,7 @@ Depende das etapas 1 e 2.
 - [ ] Analisar o áudio original para detectar segmentos de fala e silêncio.
 - [x] Definir e documentar os critérios experimentais para contabilizar pausas.
 - [ ] Produzir duração total, tempo de fala, pausas e seus intervalos; indicar limitações de ruído e múltiplos falantes.
-- [ ] Usar Azure Text Analytics para termos críticos e sentimentos no texto transcrito.
+- [x] Usar Azure Text Analytics para termos relevantes e sentimentos no texto transcrito.
 - [ ] Definir uma abordagem experimental adicional para alterações vocais; pausas e sentimento textual, isoladamente, não validam detecção de fadiga ou dificuldade respiratória.
 - [ ] Comparar os eventos detectados com anotações manuais das gravações.
 - [x] Exibir transcrição e relatório com instantes verificáveis no áudio.
@@ -142,8 +145,11 @@ diagnóstico, anexado pelo botão **+** e transcrito pelo Azure Speech em `pt-BR
 a transcrição, 24 palavras temporizadas, uma pausa estimada de pelo menos 0,8 s e o maior intervalo
 estimado de 2,2 s, além das limitações experimentais. O resultado persistiu após recarregar a
 página e permaneceu associado somente ao paciente de origem durante as trocas de paciente. O
-processamento repetido reutiliza o resultado persistido. A detecção direta de silêncio no sinal,
-os cenários com ruído e múltiplos falantes e o Azure Text Analytics continuam pendentes.
+processamento repetido reutiliza o resultado persistido. Um OGG/Opus fictício de 13,4 s gerado no
+WhatsApp também foi convertido localmente para WAV PCM temporário, transcrito e analisado. A
+interface exibiu as frases-chave `sessão`, `exercício`, `cansaço`, `fisioterapia` e `segundos`, além
+de sentimento textual negativo com 100% de confiança e ressalvas clínicas. A detecção direta de
+silêncio no sinal e os cenários com ruído e múltiplos falantes continuam pendentes.
 
 **Concluída quando:** a transcrição e os eventos temporais são demonstráveis, os serviços Azure exigidos estão integrados e a cobertura de alterações vocais está explicitamente avaliada ou registrada como limitação pendente.
 
@@ -233,9 +239,9 @@ Depende das etapas anteriores.
 
 ## 6. Próxima tarefa e acompanhamento
 
-**Próxima tarefa:** provisionar e integrar o Azure AI Language F0 para extrair termos relevantes e
-sentimento da transcrição, mantendo cache, limites de consumo e as ressalvas de que sentimento e
-pausas não constituem diagnóstico clínico.
+**Próxima tarefa:** provisionar e integrar o Azure Document Intelligence F0 para iniciar o OCR de
+laudos e prescrições fictícios, mantendo cache, limites de consumo e as ressalvas de que extração e
+classificação textual não constituem diagnóstico clínico.
 
 Para cada tarefa implementada, registrar:
 

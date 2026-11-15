@@ -17,6 +17,7 @@ from tech_ai.errors import (
     EmbeddingError,
     KnowledgeRetrievalError,
     KnowledgeStoreError,
+    LanguageAnalysisError,
     ModelArtifactReadError,
     ModelArtifactValidationError,
     ModelRuntimeError,
@@ -48,6 +49,10 @@ def _build_parser(settings: Settings) -> argparse.ArgumentParser:
         "--output",
         type=Path,
         help="Mantém o WAV fictício gerado neste caminho; não pode ser usado com --audio.",
+    )
+    subcommands.add_parser(
+        "check-language",
+        help="Executa uma análise Azure pequena com texto fictício.",
     )
     inspect_parser = subcommands.add_parser(
         "inspect-model",
@@ -205,6 +210,43 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             )
             return 0
+        if arguments.command == "check-language":
+            from tech_ai.config.azure import AzureSettings
+            from tech_ai.integrations.language.azure import AzureLanguageAnalyzer
+
+            azure = AzureSettings.from_environment()
+            if not azure.language_enabled:
+                raise ConfigurationError(
+                    "Ative TECH_AI_AZURE_LANGUAGE_ENABLED para o diagnóstico."
+                )
+            analyzer = AzureLanguageAnalyzer(
+                key=azure.language_key,
+                endpoint=azure.language_endpoint,
+                max_concurrent_requests=azure.max_concurrent_requests,
+            )
+            result = analyzer.analyze(
+                "Relato fictício: estou cansado, mas consegui terminar o exercício com calma.",
+                language="pt-BR",
+            )
+            print(
+                json.dumps(
+                    {
+                        "status": "ok",
+                        "data": "fictícia",
+                        "sentiment": result.sentiment,
+                        "confidence": {
+                            "positive": result.confidence.positive,
+                            "neutral": result.confidence.neutral,
+                            "negative": result.confidence.negative,
+                        },
+                        "key_phrases": result.key_phrases,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
         if arguments.command == "inspect-model":
             artifact = inspect_model_artifact(arguments.manifest)
             print(artifact.to_json())
@@ -264,6 +306,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         EmbeddingError,
         KnowledgeRetrievalError,
         KnowledgeStoreError,
+        LanguageAnalysisError,
         ModelArtifactReadError,
         ModelArtifactValidationError,
         ModelRuntimeError,
@@ -283,7 +326,9 @@ def _audio_content_type(path: Path) -> str:
         return "audio/wav"
     if extension == ".mp3":
         return "audio/mpeg"
-    raise ConfigurationError("O diagnóstico aceita apenas arquivos WAV ou MP3.")
+    if extension == ".ogg":
+        return "audio/ogg"
+    raise ConfigurationError("O diagnóstico aceita apenas arquivos WAV, MP3 ou OGG.")
 
 
 def _new_wav_output(path: Path) -> Path:

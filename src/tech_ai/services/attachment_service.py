@@ -13,9 +13,11 @@ from tech_ai.errors import (
     AttachmentNotFoundError,
     AttachmentStorageError,
     AttachmentValidationError,
+    LanguageAnalysisError,
     PatientNotFoundError,
     SpeechTranscriptionError,
 )
+from tech_ai.integrations.language.client import TextAnalysis, TextAnalyzer
 from tech_ai.integrations.speech.client import SpeechTranscriber, SpeechTranscript
 from tech_ai.models.attachment import (
     AttachmentAnalysis,
@@ -39,6 +41,7 @@ _EXTENSIONS: dict[str, tuple[AttachmentModality, str]] = {
     ".png": ("image", "image/png"),
     ".wav": ("audio", "audio/wav"),
     ".mp3": ("audio", "audio/mpeg"),
+    ".ogg": ("audio", "audio/ogg"),
     ".mp4": ("video", "video/mp4"),
 }
 _DECLARED_TYPES = {
@@ -49,6 +52,8 @@ _DECLARED_TYPES = {
     "audio/x-wav": "audio/wav",
     "audio/mpeg": "audio/mpeg",
     "audio/mp3": "audio/mpeg",
+    "audio/ogg": "audio/ogg",
+    "application/ogg": "audio/ogg",
     "video/mp4": "video/mp4",
 }
 
@@ -60,10 +65,12 @@ class AttachmentService:
         storage: AttachmentStorage,
         *,
         audio_transcriber: SpeechTranscriber | None = None,
+        text_analyzer: TextAnalyzer | None = None,
     ) -> None:
         self._repository = repository
         self._storage = storage
         self._audio_transcriber = audio_transcriber
+        self._text_analyzer = text_analyzer
 
     async def upload(
         self,
@@ -180,16 +187,41 @@ class AttachmentService:
             )
             return self._save_analysis(owner, patient_id, attachment, analysis)
 
+        text_analysis: TextAnalysis | None = None
+        language_failure: str | None = None
+        if self._text_analyzer is not None:
+            try:
+                text_analysis = self._text_analyzer.analyze(
+                    transcript.text,
+                    language=transcript.language,
+                )
+            except LanguageAnalysisError as error:
+                language_failure = str(error)
+
         finished = datetime.now(UTC)
+        observations = list(_speech_observations(transcript))
+        limitations = list(_speech_limitations(transcript))
+        processor_name = "azure-speech-realtime"
+        processor_version = "1.0"
+        if text_analysis is not None:
+            observations.extend(_language_observations(text_analysis))
+            limitations.extend(_language_limitations())
+            processor_name = "azure-speech-language"
+            processor_version = "1.1"
+        elif language_failure is not None:
+            limitations.append(language_failure)
+            limitations.append(
+                "A transcrição foi preservada sem a análise textual complementar."
+            )
         analysis = AttachmentAnalysis(
             attachment.analysis.id,
             "completed",
-            "azure-speech-realtime",
-            "1.0",
+            processor_name,
+            processor_version,
             attachment.analysis.attempt + 1,
             f"Transcrição: {transcript.text}",
-            _speech_observations(transcript),
-            _speech_limitations(transcript),
+            tuple(observations),
+            tuple(limitations),
             None,
             attachment.analysis.created_at,
             started,
@@ -268,7 +300,7 @@ class AttachmentService:
         expected = _EXTENSIONS.get(extension)
         if expected is None:
             raise AttachmentValidationError(
-                "Formato não aceito. Use PDF, JPEG, PNG, WAV, MP3 ou MP4."
+                "Formato não aceito. Use PDF, JPEG, PNG, WAV, MP3, OGG ou MP4."
             )
         declared = declared_content_type.split(";", 1)[0].strip().lower()
         normalized_declared = _DECLARED_TYPES.get(declared)
@@ -292,6 +324,8 @@ def _detect_content(header: bytes) -> tuple[AttachmentModality, str]:
         len(header) >= 2 and header[0] == 0xFF and header[1] & 0xE0 == 0xE0
     ):
         return "audio", "audio/mpeg"
+    if header.startswith(b"OggS") and b"Opus" in header:
+        return "audio", "audio/ogg"
     if len(header) >= 12 and header[4:8] == b"ftyp":
         return "video", "video/mp4"
     raise AttachmentValidationError("O conteúdo do arquivo não corresponde a um formato aceito.")
@@ -337,3 +371,31 @@ def _speech_limitations(transcript: SpeechTranscript) -> tuple[str, ...]:
     if transcript.truncated:
         limitations.append("O áudio foi interrompido ao atingir o limite de duração da POC.")
     return tuple(limitations)
+
+
+_SENTIMENT_LABELS = {
+    "positive": "positivo",
+    "neutral": "neutro",
+    "negative": "negativo",
+    "mixed": "misto",
+}
+
+
+def _language_observations(analysis: TextAnalysis) -> tuple[str, ...]:
+    phrases = ", ".join(analysis.key_phrases) if analysis.key_phrases else "nenhuma"
+    sentiment = _SENTIMENT_LABELS.get(analysis.sentiment.casefold(), analysis.sentiment)
+    confidence = analysis.confidence
+    return (
+        f"Frases-chave extraídas do texto: {phrases}.",
+        "Sentimento textual predominante: "
+        f"{sentiment} (positivo {confidence.positive:.0%}, "
+        f"neutro {confidence.neutral:.0%}, negativo {confidence.negative:.0%}).",
+    )
+
+
+def _language_limitations() -> tuple[str, ...]:
+    return (
+        "O sentimento descreve o texto transcrito, não o estado clínico da pessoa.",
+        "Frases-chave são termos relevantes do texto e não constituem achados clínicos.",
+        "Erros da transcrição podem alterar as frases-chave e o sentimento estimado.",
+    )

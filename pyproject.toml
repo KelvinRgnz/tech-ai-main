@@ -19,9 +19,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Cliente carregado apenas quando a integração Speech é habilitada.
+# Clientes carregados apenas quando as integrações Azure são habilitadas.
 azure = [
+  "azure-ai-textanalytics>=5.3,<6",
   "azure-cognitiveservices-speech>=1.47,<2",
+  "imageio-ffmpeg>=0.6,<1",
 ]
 # Runtime pesado de inferência local. A busca no ChromaDB e os testes não
 # precisam baixar PyTorch nem os pesos do modelo.
@@ -104,6 +106,8 @@ omit = [
   "src/tech_ai/integrations/llm/huggingface.py",
   # Exige o SDK nativo e Azure; contrato, normalização e caso de uso têm testes locais.
   "src/tech_ai/integrations/speech/azure.py",
+  "src/tech_ai/integrations/speech/conversion.py",
+  "src/tech_ai/integrations/language/azure.py",
 ]
 
 [tool.coverage.report]
