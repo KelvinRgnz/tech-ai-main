@@ -111,6 +111,20 @@ definido em `TECH_AI_AUTH_USERS`. O modo padrão consulta o Chroma Cloud e mostr
 evidência mais próxima, as fontes numeradas e o aviso acadêmico. O modo com modelo usa o mesmo
 fluxo do comando `ask` e só funciona depois do extra `runtime`.
 
+### Análise local do vídeo de fisioterapia
+
+O fluxo acadêmico de vídeo usa o MediaPipe Pose Landmarker para estimar articulações, contar
+ciclos de sentar e levantar e registrar eventos com instante verificável. Instale o extra e
+baixe o bundle oficial conforme o passo a passo em
+[`docs/video-pose-analysis.md`](docs/video-pose-analysis.md). Depois, valide um MP4 fictício:
+
+```powershell
+uv run --no-sync tech-ai check-video --file ".data/samples/teste_video.mp4"
+```
+
+O relatório é experimental, depende do protocolo de enquadramento e não constitui avaliação
+clínica.
+
 ## Autenticação
 
 A API HTTP protege `/api/consult`, `/api/ask` e `/api/me`. Saúde, a página e os
@@ -197,3 +211,91 @@ uv run pytest
 
 O contexto estruturado de pacientes poderá entrar em fatias posteriores, sem alterar o núcleo
 RAG já testado. A interface HTTP do assistente já consulta essa mesma recuperação.
+
+## PostgreSQL da aplicação (Supabase)
+
+Configure `TECH_AI_DATABASE_URL` no `.env` local com a URI do Session pooler. Codifique caracteres especiais da senha para URL. A variável é privada do backend; não use a chave publicável como senha do banco.
+
+Execute `uv run tech-ai check-db` para validar uma conexão TLS com `SELECT 1` em transação somente-leitura. O comando exige TLS, limita conexão e consulta e omite detalhes privados dos erros. `sslmode=require` exige criptografia, mas não equivale a validar a identidade do servidor com `verify-full`.
+
+Para criar as tabelas de pacientes e conversas, execute na pasta do projeto:
+
+```powershell
+uv run tech-ai migrate-db
+```
+
+A migração 1 cria o schema `tech_ai`, as tabelas `patients`, `conversations` e
+`schema_migrations`. A migração 2 cria `messages` para o histórico das conversas. A migração 3
+cria `attachments` e `analyses` para os metadados e o estado do processamento multimodal. A
+migração 4 acrescenta documentos PDF às modalidades aceitas. O comando usa uma transação e
+tenta adquirir uma trava sem aguardar indefinidamente. Permissões do
+schema são configuradas apenas na criação inicial. Repetir o comando após sucesso não recria as
+tabelas. A API não executa migrações no startup.
+
+Endpoints autenticados disponíveis (também em `/docs`):
+
+| Método e rota | Comportamento |
+| --- | --- |
+| `POST /api/patients` | Recebe `{"display_name": "Paciente fictício A"}` e cria paciente/conversa juntos |
+| `GET /api/patients?limit=50&offset=0` | Lista somente pacientes do usuário da sessão |
+| `GET /api/patients/{id}/conversation` | Retorna o paciente e seu `conversation_id` estável; 404 se não pertencer ao usuário |
+| `GET /api/patients/{id}/messages` | Carrega o histórico somente para o proprietário autenticado |
+| `POST /api/patients/{id}/attachments?filename=...` | Recebe um arquivo no corpo, valida e cria a análise pendente |
+| `GET /api/patients/{id}/attachments` | Lista anexos e resultados do paciente autorizado |
+| `POST /api/patients/{id}/attachments/{anexo}/process` | Usa Azure Speech para áudio habilitado; demais modalidades usam o simulador |
+| `GET /api/patients/{id}/attachments/{anexo}/content` | Entrega o arquivo somente ao proprietário autorizado |
+
+IDs são gerados no servidor. O cliente não pode escolher proprietário ou registrar
+`fictional=false`. O nome tem até 120 caracteres. A paginação aceita até 100 registros.
+Os horários são enviados com fuso UTC. O schema é privado, com RLS habilitada e sem
+políticas de acesso público nas tabelas de pacientes/conversas. A conexão administrativa
+usada nesta POC pode ignorar RLS: o isolamento entre usuários é feito pelas consultas
+parametrizadas do backend. Não exponha esse schema pela API pública do Supabase.
+
+O chat permite criar e selecionar pacientes. Consultas que informam `patient_id` registram a
+pergunta e a resposta, e a interface restaura o histórico ao recarregar ou trocar de paciente.
+Pedidos genéricos iniciam uma entrevista curta antes da busca. A interface consulta
+`GET /api/capabilities` e desabilita o modo com modelo quando o runtime opcional não estiver
+instalado.
+
+O botão **+** aceita PDF (até 25 MiB), JPEG/PNG (até 10 MiB), WAV/MP3 (até 25 MiB) e MP4
+(até 100 MiB). O backend compara extensão, MIME declarado e assinatura do conteúdo, calcula SHA-256
+e gera a chave interna; o nome original é apenas apresentação. Os arquivos ficam em
+`TECH_AI_ATTACHMENT_DIR` (padrão `.data/attachments`) e somente os metadados ficam no Supabase.
+Documentos, imagens e vídeos ainda usam o processador simulado e não extraem conteúdo clínico.
+Quando `TECH_AI_AZURE_SPEECH_ENABLED=true`, WAV e MP3 usam transcrição em tempo real do Azure
+Speech, preservam marcações temporais por palavra e produzem um relatório experimental de pausas.
+O resultado concluído fica persistido e consultar novamente o mesmo anexo não repete a chamada.
+O RAG existente continua independente do banco.
+Os testes usam repositório em memória e driver simulado; não substituem a validação da migração
+e da persistência no PostgreSQL real.
+
+## Azure da POC
+
+As integrações Azure permanecem desativadas por padrão e suas credenciais existem somente no
+`.env` local. O cliente opcional do Speech é instalado com
+`uv sync --dev --extra azure --no-cache`. Para o primeiro teste real, prefira WAV PCM mono de
+16 kHz e menos de 30 segundos. MP3 depende do GStreamer instalado no sistema.
+
+O critério experimental conta uma pausa quando há pelo menos 0,8 s entre palavras reconhecidas.
+Pausas isoladas não comprovam desconforto, fadiga ou dificuldade respiratória; ruído, dicção e
+múltiplos falantes podem alterar o resultado. Limites conservadores são validados antes das
+chamadas.
+
+Depois de configurar a chave, o diagnóstico integrado abaixo sintetiza um relato fictício curto e
+o transcreve. Ele realiza duas operações pequenas no Speech F0 e não imprime a credencial:
+
+```powershell
+uv run --no-sync --no-cache tech-ai check-speech
+```
+
+Para manter o WAV fictício e anexá-lo pelo botão **+** do chat:
+
+```powershell
+uv run --no-sync --no-cache tech-ai check-speech --output .data/samples/relato-ficticio.wav
+```
+
+O diretório `.data/` é local e ignorado pelo Git. Por segurança, o comando não sobrescreve um
+arquivo existente.
+Consulte [`docs/azure-poc-plan.md`](docs/azure-poc-plan.md) para serviços, faixas gratuitas,
+controle de custos, variáveis e sequência de provisionamento.

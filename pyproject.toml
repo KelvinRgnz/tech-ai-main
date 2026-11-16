@@ -14,10 +14,24 @@ authors = [
 dependencies = [
   "chromadb==1.5.9",
   "fastapi>=0.115,<1",
+  "psycopg[binary]>=3.2,<4",
   "uvicorn[standard]>=0.32,<1",
 ]
 
 [project.optional-dependencies]
+# Clientes carregados apenas quando as integrações Azure são habilitadas.
+azure = [
+  "azure-ai-documentintelligence==1.0.2",
+  "azure-ai-textanalytics>=5.3,<6",
+  "azure-cognitiveservices-speech>=1.47,<2",
+  "imageio-ffmpeg>=0.6,<1",
+]
+# Estimativa de pose local para o vídeo de fisioterapia da demonstração.
+video = [
+  "mediapipe>=1.2.3,<2",
+  # Declarado explicitamente porque o MediaPipe o utiliza para decodificar MP4.
+  "opencv-contrib-python>=5,<6",
+]
 # Runtime pesado de inferência local. A busca no ChromaDB e os testes não
 # precisam baixar PyTorch nem os pesos do modelo.
 runtime = [
@@ -85,6 +99,8 @@ module = [
   "bitsandbytes.*",
   "chromadb.*",
   "peft.*",
+  "cv2.*",
+  "mediapipe.*",
   "torch.*",
   "transformers.*",
   "uvicorn.*",
@@ -97,6 +113,13 @@ omit = [
   "src/tech_ai/runner.py",
   # Exige PyTorch, GPU e pesos reais; a fronteira é coberta por testes leves.
   "src/tech_ai/integrations/llm/huggingface.py",
+  # Exige o SDK nativo e Azure; contrato, normalização e caso de uso têm testes locais.
+  "src/tech_ai/integrations/speech/azure.py",
+  "src/tech_ai/integrations/speech/conversion.py",
+  "src/tech_ai/integrations/language/azure.py",
+  "src/tech_ai/integrations/documents/azure.py",
+  # Exige OpenCV, MediaPipe e o bundle binário oficial; regras temporais ficam cobertas.
+  "src/tech_ai/integrations/video/mediapipe.py",
 ]
 
 [tool.coverage.report]

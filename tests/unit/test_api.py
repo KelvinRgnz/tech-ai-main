@@ -144,12 +144,47 @@ def test_health_and_interface_are_available() -> None:
     assert "Entrar no assistente" in page.text
     assert 'id="login-form"' in page.text
     assert "is-locked" in page.text
-    assert "app.js?v=auth1" in page.text
+    assert "app.js?v=video2" in page.text
+    assert 'id="patient-select"' in page.text
+    assert 'id="patient-form"' in page.text
+    assert 'id="attachment-button"' in page.text
+    assert 'id="attachment-input"' in page.text
     assert page.headers.get("cache-control") == "no-store"
     assert "Quais são os sintomas da diabetes?" in page.text
     assert "Prefira perguntas em inglês" not in page.text
     assert css.status_code == 200
     assert "teal" in css.text or "--teal" in css.text
+
+
+def test_capabilities_report_optional_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _client(authenticate=False)
+    monkeypatch.setattr("tech_ai.api.app.importlib.util.find_spec", lambda module: object())
+    assert client.get("/api/capabilities").json() == {"assistant_runtime": True}
+    monkeypatch.setattr("tech_ai.api.app.importlib.util.find_spec", lambda module: None)
+    assert client.get("/api/capabilities").json() == {"assistant_runtime": False}
+
+
+def test_vague_question_starts_interview_without_retrieval() -> None:
+    retrieval = FakeRetrievalService()
+    client = _client(retrieval)
+    response = client.post(
+        "/api/consult", json={"question": "Estou tendo um problema, consegue me ajudar?"}
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "interview"
+    assert payload["grounded"] is False
+    assert "principal sintoma" in payload["answer"]
+    assert retrieval.queries == []
+
+
+def test_vague_question_does_not_load_assistant_model() -> None:
+    assistant = FakeAssistantService()
+    client = _client(assistant=assistant)
+    response = client.post("/api/ask", json={"question": "Pode me ajudar?"})
+    assert response.status_code == 200
+    assert response.json()["mode"] == "interview"
+    assert assistant.questions == []
 
 
 def test_consult_returns_sources_citations_and_disclaimer() -> None:

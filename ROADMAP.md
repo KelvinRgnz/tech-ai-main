@@ -1,0 +1,391 @@
+# Roadmap — Tech Challenge Fase 4
+
+Guia de evolução do assistente médico acadêmico para análise multimodal e monitoramento simulado de pacientes.
+
+**Estado em 15/11/2026:** base multimodal, Azure, OCR, áudio e vídeo validados. O foco exclusivo
+agora é concluir detecção de anomalias, alertas, fusão multimodal e os entregáveis que sustentam a
+nota. Melhorias de produto e refinamentos comerciais ficam fora do caminho crítico.
+
+Este arquivo está na raiz versionada da aplicação e acompanha a evolução do desafio acadêmico.
+
+## 1. Objetivo e decisões acordadas
+
+Permitir que uma conversa represente um paciente fictício e reúna perguntas, anexos, análises e alertas. O usuário poderá anexar arquivos pelo botão **+**. Cada modalidade produzirá resultados estruturados que poderão ser explicados pelo assistente com apoio do RAG.
+
+| Tema | Escopo inicial |
+| --- | --- |
+| Pacientes | Dados fictícios; uma conversa por paciente |
+| Vídeo | Fisioterapia: exercício encenado de levantar e sentar de uma cadeira |
+| Áudio | Gravações encenadas de 30 segundos a 2 minutos; transcrição e análise de pausas |
+| Imagens | OCR complementar de uma prescrição fictícia; refinamentos ficam no backlog |
+| Monitoramento | Reprodução de séries de sinais vitais como transmissão ao vivo |
+| Alertas | Painel na aplicação, com revisão pelo usuário |
+| Nuvem | Azure Speech to Text e Azure Text Analytics, conforme o PDF |
+| Orçamento | Teto de planejamento de R$ 200; crédito e validade de 30 dias informados pelo usuário, a confirmar no portal |
+| Modelo | Candidato atual: `mikaelkanzaki/tech3-v3-pt-br`, sobre o modelo base configurado no manifesto |
+
+O limite inicial de duração do áudio é uma escolha de implementação, não um parâmetro clínico. Pausas, movimentos e anomalias serão apresentados como observações experimentais, com suas limitações. O adaptador precisa ser avaliado para o novo contexto multimodal convertido em texto.
+
+### Escopo acadêmico confirmado no PDF
+
+Para maximizar a aderência à avaliação da FIAP, a implementação prioriza:
+
+1. vídeo clínico de fisioterapia, detecção de movimento/eventos fora do padrão e relatório;
+2. áudio de consulta, Azure Speech to Text, termos e sentimento com Azure Text Analytics;
+3. anomalias em sinais vitais, evolução de prescrições e movimentação, com alertas;
+4. fluxo multimodal, relatório técnico, repositório e vídeo demonstrativo de até 15 minutos.
+
+O OCR real já entregue é um bônus útil para demonstrar Azure e texto documental. Editor de
+correções, versionamento de OCR e extração clínica detalhada não são requisitos obrigatórios do
+PDF e ficam no backlog. A evolução de prescrições será demonstrada na Etapa 6 com dados sintéticos
+estruturados e comparáveis, sem depender de um editor documental de nível comercial.
+
+### Diretiva vigente: maximizar a nota da Fase 4
+
+O Tech Challenge vale 90% da nota das disciplinas da fase. A partir desta revisão, uma tarefa só
+entra no caminho crítico quando aumenta a cobertura de um requisito obrigatório ou produz uma
+evidência necessária para o relatório e o vídeo final.
+
+| Prioridade | Entrega | Decisão |
+| --- | --- | --- |
+| P0 | Anomalias em sinais vitais, evolução de prescrições e movimentação | Implementar uma demonstração sintética pequena, determinística e verificável |
+| P0 | Alertas automáticos com origem, evidência, horário e revisão | Implementar o fluxo completo até o painel do paciente |
+| P0 | Fusão de texto, áudio e vídeo | Demonstrar no mesmo paciente sem exigir evolução comercial do modelo generativo |
+| P0 | Relatório técnico e vídeo de até 15 minutos | Produzir matriz requisito → evidência e roteiro reproduzível |
+| P1 | Métricas acústicas adicionais para alterações vocais | Entregar ao menos uma medida objetiva e declarar os limites clínicos |
+| Backlog | Editor de OCR, armazenamento em nuvem, filas robustas, deploy e escala | Não implementar antes da entrega acadêmica |
+
+### Painel executivo das etapas
+
+| Etapa | Situação | Conclusão para a nota |
+| --- | --- | --- |
+| 0. Base e contratos | **Concluída** | Arquitetura, testes e contratos sustentam as demais evidências |
+| 1. Pacientes e anexos | **Concluída** | Upload, persistência, isolamento e recuperação foram demonstrados |
+| 2. Azure e consumo | **Concluída** | Speech, Language e Document Intelligence F0 foram validados com dados fictícios |
+| 3. OCR documental | **Concluída — bônus** | Fortalece texto/documentos, mas não substitui a evolução de prescrições da Etapa 6 |
+| 4. Áudio | **Parcialmente concluída** | STT, termos, sentimento e pausas funcionam; falta uma medida acústica objetiva de alteração vocal |
+| 5. Vídeo | **Concluída** | Cinco repetições, pausa e ciclo incompleto coincidiram com a anotação manual |
+| 6. Anomalias e alertas | **Não iniciada — bloqueador P0** | É requisito obrigatório central e a maior lacuna atual |
+| 7. Fusão multimodal | **Não iniciada — bloqueador P0** | Necessária para provar o objetivo de integrar texto, áudio e vídeo |
+| 8. Entrega acadêmica | **Em andamento — bloqueador P0** | Código existe; faltam relatório final, roteiro, vídeo e publicação |
+
+**Conclusão executiva:** a solução já possui boas demonstrações isoladas, mas ainda não atende por
+completo a diretiva. A próxima decisão correta não é polir OCR, vídeo ou interface; é entregar a
+Etapa 6 em um fluxo mínimo completo e usá-la para fechar as Etapas 7 e 8.
+
+## 2. Base existente e limites arquiteturais
+
+O `tech-ai-main` contém FastAPI, interface web, autenticação, busca semântica no ChromaDB, embeddings ONNX locais, tradução e geração com modelo Hugging Face/LoRA. A leitura inicial não incluiu execução da aplicação ou dos testes.
+
+Respeitar `AGENTS.md` e a arquitetura em camadas:
+
+- `models/`: contratos de pacientes, conversas, anexos, análises e alertas.
+- `services/`: casos de uso e orquestração do processamento.
+- `integrations/`: Azure, OCR, áudio, vídeo e demais sistemas externos.
+- `repositories/`: contratos de persistência quando houver necessidade real.
+- `config/`: configurações e composição das dependências.
+- `api/`: endpoints e interface.
+
+O ChromaDB de conhecimento permanece somente para leitura. Dados de pacientes e anexos precisam de persistência própria; não devem ser indexados nessa coleção. Treinamento pertence ao `tech-fine-tuning` e ingestão da base ao `tech-ingestao`.
+
+## 3. Fluxo pretendido
+
+1. Usuário autenticado seleciona um paciente fictício e abre sua conversa.
+2. Anexa um arquivo; o backend valida extensão, tipo declarado e conteúdo real.
+3. O sistema registra o anexo e inicia o processamento específico da modalidade.
+4. A interface exibe progresso, resultado, limitações ou erro recuperável.
+5. A interface apresenta resultados e limitações; revisão editável fica no backlog.
+6. O assistente recebe pergunta, achados selecionados e evidências do RAG.
+7. A reprodução de sinais vitais produz eventos e alertas vinculados ao paciente.
+8. O painel permite consultar a evidência que originou cada alerta e marcá-lo como revisado.
+
+## 4. Etapas e tarefas
+
+As caixas indicam trabalho concluído, não apenas código escrito. Ao concluir cada etapa, registrar validação e limitações. Implementar primeiro um fluxo pequeno de ponta a ponta, depois ampliar as modalidades.
+
+### Etapa 0 — Confirmar a base e os contratos
+
+- [x] Executar os checks e a aplicação via TestClient com integrações simuladas; registrar o estado inicial.
+- [x] Conferir novamente o PDF e manter a matriz de requisitos deste guia atualizada.
+- [x] Definir identificadores e relação entre usuário, paciente, conversa e anexo.
+- [x] Definir PostgreSQL no Supabase para metadados e disco local para arquivos, sem reutilizar o ChromaDB médico.
+- [x] Definir contrato comum de análise: modalidade, estado, resumo, observações, evidências, limitações, versão do processador e horários.
+- [x] Definir estados de processamento: pendente, processando, concluído e falhou.
+- [x] Definir formatos aceitos, limites de tamanho/duração e política de retenção dos arquivos.
+- [x] Definir processamento em segundo plano e comportamento após reinício da aplicação.
+
+Decisões registradas em `docs/contracts/multimodal-context.md`. São contratos para implementação, não funcionalidades já disponíveis. Após instalação das dependências pelo usuário: Ruff aprovado; mypy aprovado em 57 arquivos; pytest com 129 testes aprovados e cobertura de 95,07% (mínimo exigido: 90%). A suíte inclui 14 testes de API, com criação da aplicação, página, saúde, login, sessão e endpoints protegidos usando integrações simuladas. Não foi validada a conexão real com ChromaDB, a inferência na GPU ou a interface em navegador. Dois avisos de depreciação vêm das dependências Starlette/httpx e AnyIO. Para contornar permissões locais, os comandos usaram `uv run --no-sync --no-cache`; pytest também usou `--basetemp` apontando para um diretório novo e exclusivo dentro de `.venv`. Não houve alteração do código da aplicação.
+
+**Concluída quando:** contratos e decisões estiverem documentados e o comportamento atual tiver sido verificado.
+
+### Etapa 1 — Paciente, conversa e botão de anexos
+
+Depende da etapa 0.
+
+- [x] Criar persistência e endpoints de pacientes fictícios e suas conversas.
+- [x] Vincular mensagens e anexos ao paciente e ao usuário autorizado.
+- [x] Adicionar o botão **+**, seleção de arquivo e prévia do anexo.
+- [x] Implementar upload com validação do conteúdo e armazenamento seguro do nome/caminho.
+- [x] Mostrar estado, erro e opção de repetir o processamento.
+- [x] Implementar um processador simulado para testar o fluxo sem consumo Azure.
+- [x] Verificar isolamento: anexos e mensagens de um paciente não entram no contexto de outro.
+
+**Concluída quando:** um usuário consegue anexar um arquivo à conversa correta, acompanhar seu processamento simulado e recuperar o resultado após recarregar a página.
+
+**Status:** concluída e validada pelo usuário com upload real de PDF, processamento simulado e recuperação vinculada ao paciente no Supabase.
+
+### Etapa 2 — Azure e controle de consumo
+
+Depende da etapa 0; deve preceder testes com serviços reais.
+
+- [x] Confirmar crédito, moeda, data de expiração e condições da assinatura no portal.
+- [x] Consultar preços, regiões e disponibilidade atuais dos serviços necessários.
+- [x] Estimar consumo para o conjunto de demonstração antes de provisionar recursos.
+- [x] Provisionar Speech to Text F0 em Brazil South.
+- [x] Provisionar o serviço correspondente ao Text Analytics requerido pelo PDF.
+- [x] Provisionar Document Intelligence F0 em Brazil South para o OCR inicial.
+- [x] Configurar credenciais por ambiente, sem incluí-las no Git, no navegador ou nos logs.
+- [x] Criar clientes intercambiáveis: simulado para desenvolvimento e Azure para integração.
+- [x] Configurar limites locais de duração, volume de arquivos e concorrência.
+- [x] Registrar chamadas e reutilizar resultados por arquivo/configuração/versão do processador.
+- [x] Configurar alertas de orçamento e um procedimento para interromper o processamento pago.
+- [x] Documentar que alertas de orçamento não equivalem, por si só, a bloqueio automático de gastos.
+
+**Concluída quando:** uma chamada pequena funciona, o resultado é reutilizado e o consumo pode ser acompanhado. Não presumir que todo recurso ficará dentro do crédito gratuito.
+
+**Validação real em 15/11/2026:** budget mensal de R$ 20 configurado; recurso
+`speech-tech-ai-poc-mikael` criado no grupo `rg-tech-ai-poc`; `tech-ai check-speech` sintetizou e
+transcreveu um relato fictício de 12,23 s em `pt-BR`, devolvendo 24 palavras com marcações
+temporais. O recurso F0 `language-tech-ai-poc-mikael` também foi provisionado e o diagnóstico
+fictício devolveu sentimento negativo com 92% de confiança e três frases-chave. A estimativa para
+até 20 áudios de demonstração é de no máximo 40 minutos de Speech e 40 registros do Language,
+antes de repetições. O Document Intelligence ainda estava pendente nesse primeiro teste.
+
+**Validação adicional em 15/11/2026:** o recurso F0 `document-tech-ai-poc-mikael` foi
+provisionado; `tech-ai check-document` processou uma prescrição fictícia de uma página com 496
+caracteres, e o fluxo integrado exibiu o PDF, o texto original e as limitações. O resultado
+persistiu após recarregar a página e permaneceu isolado no paciente de origem. Com os três
+serviços reais pequenos, cache e acompanhamento de consumo validados, a Etapa 2 está concluída.
+
+### Etapa 3 - OCR complementar de documentos
+
+Depende da etapa 1 e, caso o OCR escolhido seja em nuvem, da etapa 2.
+
+- [x] Criar uma prescrição fictícia legível para a demonstração.
+- [x] Escolher Azure Document Intelligence `prebuilt-read` para o OCR inicial, considerando qualidade, custo e integração.
+- [x] Extrair texto preservando a referência ao PDF ou à imagem original.
+- [x] Não completar valores ausentes por suposição e apresentar limitações do OCR.
+- [x] Exibir documento, texto original extraído e limitações na conversa.
+
+**Concluída no escopo acadêmico quando:** uma prescrição fictícia pode ser anexada, lida e
+vinculada ao paciente com rastreabilidade. Refinamentos de produto permanecem no backlog.
+
+**Validação parcial em 15/11/2026:** uma prescrição fictícia em PDF foi processada pelo
+`prebuilt-read`; a interface exibiu o original, 496 caracteres reconhecidos, contagem de páginas e
+ressalvas de revisão humana. Isolamento por paciente, persistência e reutilização foram confirmados.
+Essa entrega complementar está concluída no escopo acadêmico definido pelo PDF.
+
+**Backlog pós-entrega:** laudo adicional, marcação regional de trechos incertos, correção
+versionada e estruturação de data, medicamento, dose, unidade e frequência a partir do OCR.
+
+### Etapa 4 — Áudio: transcrição e observações temporais
+
+Depende das etapas 1 e 2.
+
+- [ ] Preparar gravações encenadas de fala contínua, pausas intencionais e ruído de fundo.
+- [x] Implementar transcrição com Azure Speech to Text e preservar marcações temporais disponíveis.
+- [ ] Analisar o áudio original para detectar segmentos de fala e silêncio.
+- [x] Definir e documentar os critérios experimentais para contabilizar pausas.
+- [ ] Produzir duração total, tempo de fala, pausas e seus intervalos; indicar limitações de ruído e múltiplos falantes.
+- [x] Usar Azure Text Analytics para termos relevantes e sentimentos no texto transcrito.
+- [ ] Definir uma abordagem experimental adicional para alterações vocais; pausas e sentimento textual, isoladamente, não validam detecção de fadiga ou dificuldade respiratória.
+- [ ] Comparar os eventos detectados com anotações manuais das gravações.
+- [x] Exibir transcrição e relatório com instantes verificáveis no áudio.
+
+**Validação integrada em 15/11/2026:** um WAV fictício de 12,23 s foi gerado pelo comando de
+diagnóstico, anexado pelo botão **+** e transcrito pelo Azure Speech em `pt-BR`. A interface exibiu
+a transcrição, 24 palavras temporizadas, uma pausa estimada de pelo menos 0,8 s e o maior intervalo
+estimado de 2,2 s, além das limitações experimentais. O resultado persistiu após recarregar a
+página e permaneceu associado somente ao paciente de origem durante as trocas de paciente. O
+processamento repetido reutiliza o resultado persistido. Um OGG/Opus fictício de 13,4 s gerado no
+WhatsApp também foi convertido localmente para WAV PCM temporário, transcrito e analisado. A
+interface exibiu as frases-chave `sessão`, `exercício`, `cansaço`, `fisioterapia` e `segundos`, além
+de sentimento textual negativo com 100% de confiança e ressalvas clínicas. A detecção direta de
+silêncio no sinal e os cenários com ruído e múltiplos falantes continuam pendentes.
+
+**Conclusão atual:** cobertura parcial suficiente para demonstrar Azure Speech to Text, termos,
+sentimento e eventos temporais. Para reduzir risco de nota, ainda deve ser adicionada uma medida
+acústica objetiva simples (por exemplo, proporção de silêncio/tempo de fala), comparada com a
+anotação manual e apresentada como indicador experimental, nunca como diagnóstico.
+
+**Concluída quando:** a transcrição e os eventos temporais são demonstráveis, os serviços Azure exigidos estão integrados e a cobertura de alterações vocais está explicitamente avaliada ou registrada como limitação pendente.
+
+### Etapa 5 — Vídeo de fisioterapia
+
+Depende da etapa 1.
+
+- [x] Definir protocolo de gravação do exercício de levantar e sentar: câmera fixa, corpo visível e condições de enquadramento.
+- [x] Gravar exemplo encenado e anotar manualmente repetições e eventos esperados.
+- [x] Selecionar modelo de estimativa de pose; avaliar OpenPose ou alternativa e justificar a escolha. O PDF apresenta modelos como exemplos.
+- [x] Extrair pontos corporais e tratar frames sem detecção confiável.
+- [x] Identificar fases do movimento e contar repetições.
+- [x] Medir tempos e interrupções; definir critérios experimentais de desvio adequados ao enquadramento.
+- [x] Gerar relatório com eventos, instantes, medidas e limitações.
+- [x] Mostrar o vídeo original junto dos instantes do relatório para permitir a verificação dos achados.
+- [x] Avaliar como o fluxo cobre padrões de movimentação; registrar que exercício gravado não demonstra monitoramento contínuo durante internação.
+
+**Concluída quando:** o vídeo gera um relatório verificável de repetições e desvios definidos para a demonstração, sem apresentar os critérios como avaliação clínica validada.
+
+**Validação integrada em 15/11/2026:** o MediaPipe Pose Landmarker Lite foi escolhido como alternativa
+local e leve. O adaptador amostra o MP4, seleciona o lado corporal mais visível e calcula o ângulo
+do joelho. A regra com histerese classifica posição sentada até 115° e em pé a partir de 150°,
+conta ciclos completos e marca fases de pelo menos 5 s para revisão. A interface persiste e exibe
+cobertura, faixa angular, repetições, ciclos incompletos, eventos temporais e limitações. O protocolo e a justificativa
+estão em `docs/video-pose-analysis.md`. No MP4 de 41,65 s, a anotação manual indicava cinco ciclos
+completos, uma pausa longa sentada e uma sexta tentativa incompleta. A análise automática encontrou
+os mesmos eventos: cinco repetições, fase sentada de 12,8 s e ciclo incompleto iniciado aos 40,3 s,
+com pose em 100% dos quadros amostrados e ângulo do joelho entre 70,0° e 174,6°. O resultado valida
+o cenário encenado, não a generalização clínica do método. O mesmo relatório foi processado,
+persistido e conferido na interface do paciente, incluindo os eventos temporais e as limitações.
+
+### Etapa 6 — Sinais vitais, prescrições e alertas
+
+Depende da etapa 1; utiliza eventos da etapa 5 quando disponíveis.
+
+- [ ] Criar séries fictícias com horário, batimentos, pressão arterial e oxigenação.
+- [ ] Criar cenários conhecidos: estável, alteração pontual, alteração persistente e ausência de dados.
+- [ ] Implementar reprodução com iniciar, pausar, reiniciar e velocidade configurável.
+- [ ] Definir técnica de detecção e parâmetros experimentais; distinguir ausência de medição de anomalia fisiológica.
+- [ ] Comparar prescrições sintéticas estruturadas do mesmo paciente e destacar mudanças de medicamento, dose ou frequência.
+- [ ] Tratar mudanças como eventos para revisão, sem concluir automaticamente que constituem erro de tratamento.
+- [ ] Incorporar eventos de movimentação ao mecanismo de alertas.
+- [ ] Criar alertas com origem, evidência, horário, regra/versão e estado de revisão.
+- [ ] Evitar duplicação contínua do mesmo alerta e registrar sua resolução/revisão.
+- [ ] Exibir alertas no painel do paciente e manter histórico.
+
+**Escopo mínimo orientado à nota:** usar dados sintéticos pequenos e regras versionadas. Não é
+necessário construir uma plataforma hospitalar: basta demonstrar série normal e anômala, diferença
+entre duas prescrições, evento de movimentação e alerta rastreável no painel.
+
+**Concluída quando:** a reprodução gera os alertas esperados, uma mudança de prescrição aparece para revisão e o usuário consegue rastrear e revisar cada evento.
+
+### Etapa 7 — Fusão multimodal e integração com o assistente
+
+Depende dos resultados das etapas 4 a 6; o OCR complementar pode ser incluído sem bloquear o fluxo.
+
+- [ ] Normalizar resultados em uma linha temporal por paciente, diferenciando data do evento e data de upload.
+- [ ] Definir quais análises e intervalos entram em cada pergunta; limitar o contexto enviado ao modelo.
+- [ ] Separar observações dos processadores, texto documental e evidências recuperadas no RAG.
+- [ ] Tratar texto de anexos como dados, impedindo que instruções contidas neles substituam as regras do assistente.
+- [ ] Criar referências para anexos e eventos além das citações da base médica.
+- [ ] Adaptar o contrato de fundamentação: o `grounded` atual verifica citações e não comprova correção factual.
+- [ ] Avaliar o adaptador atual com perguntas sobre os relatórios estruturados.
+- [ ] Exibir resultados determinísticos dos processadores mesmo quando o modelo não consegue produzir explicação adequada.
+- [ ] Definir tratamento de dados contraditórios, ausentes ou temporalmente incompatíveis.
+- [ ] Demonstrar uma pergunta que combine pelo menos duas modalidades do mesmo paciente com rastreabilidade.
+
+**Escopo mínimo orientado à nota:** consolidar uma linha do tempo determinística do paciente com
+um documento, um áudio, um vídeo e os alertas da Etapa 6. A demonstração de fusão não deve
+ficar bloqueada pela qualidade do modelo generativo; os resultados dos processadores permanecem
+visíveis e rastreáveis.
+
+**Concluída quando:** o assistente utiliza achados reais do processamento, cita suas origens e não mistura pacientes; limitações do adaptador estão registradas com exemplos.
+
+### Etapa 8 — Validação e entrega acadêmica
+
+Depende das etapas anteriores.
+
+- [ ] Criar roteiro reproduzível com paciente fictício, documentos, áudio, vídeo e série de sinais vitais.
+- [ ] Medir erros de extração/transcrição, acerto de eventos, falsos alertas, latência e consumo quando aplicável.
+- [ ] Verificar falhas: arquivo incompatível, serviço indisponível, timeout, ausência de evidência e reinício durante processamento.
+- [x] Executar `uv run ruff check .`, `uv run mypy` e `uv run pytest` dentro de `tech-ai-main`.
+- [x] Fazer teste integrado real com Azure Speech usando volume controlado e dados fictícios.
+- [x] Atualizar README com instalação, execução, configuração e reprodução dos exemplos.
+- [ ] Produzir relatório técnico: fluxo multimodal, modelos, critérios, resultados, exemplos e limitações.
+- [ ] Preparar vídeo de até 15 minutos com áudio, vídeo, anomalias, Azure e fluxo final de alertas.
+- [ ] Conferir credenciais e dados antes de publicar materiais.
+- [ ] Publicar vídeo no YouTube ou Vimeo e preparar entrega do código mediante autorização do usuário.
+
+**Validação atual:** 236 testes aprovados, cobertura de 93,64%, Ruff, mypy e JavaScript
+validados. Esses checks comprovam consistência do código, mas não substituem os entregáveis
+ainda ausentes de anomalias, fusão, relatório e vídeo.
+
+**Concluída quando:** a demonstração é reproduzível e cada requisito possui evidência de implementação ou uma lacuna explicitamente reconhecida.
+
+## 5. Matriz de aderência ao PDF
+
+| Requisito obrigatório | Situação | Evidência/conclusão | Próxima ação |
+| --- | --- | --- | --- |
+| Vídeo clínico e eventos fora do padrão | **Atendido** | MP4 real, MediaPipe Pose, 5 repetições, pausa e ciclo incompleto com instantes | Usar a captura e os eventos no relatório/vídeo final |
+| Áudio de consulta e alterações vocais | **Parcial** | OGG real, transcrição, palavras temporizadas e pausas; sem classificador clínico de voz | Adicionar métrica acústica objetiva e limitação explícita |
+| Azure Speech to Text | **Atendido** | Transcrição real em `pt-BR` integrada e persistida | Preservar evidência para demonstração |
+| Azure Text Analytics: termos e sentimentos | **Atendido** | Frases-chave e sentimento reais vinculados à transcrição | Preservar evidência para demonstração |
+| Anomalias em sinais vitais | **Não atendido** | Nenhuma série/reprodução implementada | Etapa 6 P0 |
+| Evolução de prescrições | **Não atendido** | OCR isolado não compara evolução temporal | Comparar duas prescrições sintéticas estruturadas |
+| Padrões de movimentação na internação | **Parcial** | Evento de fisioterapia existe; monitoramento continuado não foi simulado | Incorporar o ciclo incompleto aos alertas da Etapa 6 |
+| Alertas automáticos à equipe | **Não atendido** | Não existe painel/histórico de alertas | Implementar origem, evidência, regra e revisão |
+| Fusão de texto, áudio e vídeo | **Não atendido** | Modalidades coexistem por paciente, mas ainda não formam uma visão combinada | Linha do tempo multimodal da Etapa 7 |
+| Monitoramento em tempo real | **Não atendido** | Não há reprodução temporal de sinais e alertas | Simulação acelerada, sem alegar tempo real clínico |
+| Código-fonte no repositório | **Atendido** | Branch versionada, testes automatizados e documentação | Manter a branch sincronizada |
+| Relatório técnico | **Não atendido** | Notas técnicas existem, mas o entregável final ainda não | Consolidar fluxo, modelos, resultados e exemplos |
+| Vídeo de até 15 minutos | **Não atendido** | Demonstrações foram testadas, mas não gravadas/publicadas | Produzir roteiro, gravação e link YouTube/Vimeo |
+
+## 6. Próxima tarefa e acompanhamento
+
+**Próxima tarefa P0:** implementar a Etapa 6 em uma fatia vertical demonstrável:
+
+1. reproduzir uma série sintética curta de batimentos, pressão e oxigenação;
+2. detectar um ponto anômalo, uma alteração persistente e ausência de medição;
+3. comparar duas prescrições estruturadas e destacar medicamento, dose ou frequência alterada;
+4. converter esses eventos e o ciclo incompleto do vídeo em alertas automáticos;
+5. exibir origem, evidência, horário, regra e estado de revisão no painel do paciente.
+
+**Ordem posterior:** fechar a métrica acústica da Etapa 4, montar a linha do tempo multimodal da
+Etapa 7 e interromper novas funcionalidades para produzir relatório, roteiro e vídeo da Etapa 8.
+
+Para cada tarefa implementada, registrar:
+
+- O que foi entregue e quais arquivos foram alterados.
+- Como foi verificado e qual foi o resultado.
+- Limitações e decisões que afetem etapas seguintes.
+- Consumo de serviços pagos, quando houver.
+
+Não marcar uma integração como concluída apenas porque existe um cliente simulado. Novas tecnologias e serviços devem ser confirmados na documentação atual durante a implementação. Commit, push e PR dependem de autorização explícita, conforme as instruções do repositório.
+
+## Decisão posterior — Supabase
+
+Por decisão do usuário, PostgreSQL no Supabase substitui SQLite para pacientes, conversas, mensagens, análises, tarefas e alertas. Arquivos permanecem no disco nesta primeira versão. A conexão será exclusivamente pelo backend, usando TECH_AI_DATABASE_URL no .env, já excluído do Git.
+
+O driver psycopg foi instalado pelo usuário. A conexão TLS e a consulta somente-leitura foram confirmadas pelo usuário em seu terminal com check-db. Credenciais permanecem no .env local.
+
+### Atualização da integração PostgreSQL
+
+Implementados modelos, serviço e repositório PostgreSQL para pacientes fictícios e uma conversa por paciente. A API permite criar, listar com paginação e consultar a conversa, sempre no escopo do usuário autenticado. Criação de paciente/conversa é transacional, com consultas parametrizadas. Criado comando migrate-db, com versão, trava transacional, schema próprio e RLS sem políticas públicas. O uso da conexão administrativa exige manter a autorização no backend.
+
+Validação local: Ruff aprovado; mypy aprovado em 69 arquivos; 150 testes aprovados, cobertura de 95,28%. Testes incluem isolamento, validação de entrada, parâmetros SQL, tratamento de falha na segunda inserção e caminhos de migração. O driver foi simulado; isso não comprova durabilidade no Supabase real. O usuário confirmou conexão e execução real de `migrate-db` no seu terminal, com a mensagem `Migração 1 aplicada.`. Cadastro e consulta pela API no banco real ainda precisam de validação.
+
+A tentativa de `migrate-db` neste ambiente falhou, mas a execução posterior pelo usuário confirmou a aplicação da migração 1. Próximo passo: integrar a seleção de pacientes ao chat e validar cadastro/consulta no banco real. A primeira caixa de persistência da etapa 1 permanece aberta até essa validação. Interface de seleção, mensagens e anexos ainda não implementados. Sem alterações em Azure e sem commit/push.
+
+### Seleção de paciente e histórico - migração 2
+
+Implementados seleção/criação de pacientes no chat, tabela `messages`, histórico por conversa e registro de perguntas/respostas. A API filtra paciente e mensagens pelo usuário autenticado. Ruff e mypy aprovados; 159 testes aprovados, cobertura de 94,90%; JavaScript validado sintaticamente.
+
+Na primeira tentativa real da migração 2, o comando ficou aguardando em uma repetição de `REVOKE ALL ON SCHEMA tech_ai FROM PUBLIC` e foi interrompido. A migração foi corrigida: a permissão do schema agora pertence somente à migração 1 e a trava usa `pg_try_advisory_xact_lock`, retornando erro imediatamente quando outra migração estiver ativa. O usuário confirmou que a nova execução funcionou e a migração 2 foi aplicada no Supabase. Próxima ação: validar cadastro, consulta e recarga do histórico na aplicação real.
+
+### Melhoria da interação do chat
+
+O teste real confirmou cadastro e persistência, mas mostrou uma resposta pouco útil para perguntas vagas e um erro técnico ao selecionar o modo com modelo sem o runtime instalado. Foi adicionada uma entrevista inicial determinística para pedidos genéricos, solicitando sintoma, início, intensidade e sinais associados antes de consultar o RAG. Quando uma busca específica não encontra evidências, a resposta também orienta quais detalhes informar.
+
+A API agora expõe as capacidades do ambiente. A interface desabilita o modo com modelo quando Torch, Transformers, PEFT ou bitsandbytes não estiverem disponíveis, evitando expor instruções técnicas ao usuário. O histórico preserva as respostas de entrevista. A conversa foi limitada a uma coluna central para aproximar visualmente pergunta e resposta. Validação: JavaScript sem erro de sintaxe; Ruff e mypy aprovados; 169 testes aprovados, cobertura de 94,97%. O usuário confirmou em teste visual real que a entrevista inicial, a resposta fundamentada e a nova organização da conversa funcionaram como esperado.
+
+### Botão de anexos e processador simulado - migração 3
+
+Implementados upload autenticado por paciente, botão **+**, prévia de imagem/áudio/vídeo, armazenamento local com chave gerada pelo servidor e metadados PostgreSQL. O backend aceita JPEG/PNG, WAV/MP3 e MP4 dentro dos limites definidos, compara extensão, MIME e assinatura do conteúdo, calcula SHA-256 e não expõe chave física ou hash na API. O acesso ao arquivo, a listagem e o processamento sempre filtram proprietário e paciente.
+
+O primeiro processador é simulado: registra estado, tentativa, resumo, observações e limitações, sem extrair informação clínica e sem consumir Azure. A migração 3 cria `attachments` e `analyses`. O usuário confirmou as migrações 3 e 4 no Supabase por meio de um upload real de PDF, com processamento e recuperação funcionando na interface. Tarefas persistidas em segundo plano permanecem para uma fatia posterior. Validação local: JavaScript sem erro de sintaxe; Ruff e mypy aprovados; 182 testes aprovados, cobertura acima de 93%.
+
+PDF foi incluído como modalidade `document`, com limite de 25 MiB, validação da assinatura `%PDF`, persistência e visualização embutida. A migração 4 amplia a restrição de modalidades e funciona tanto para quem já aplicou a migração 3 quanto para uma instalação nova. O OCR real do PDF permanece na etapa de laudos e prescrições. Validação atual: 185 testes aprovados e cobertura de 93,54%.
+
+### Início da etapa Azure
+
+Preços, faixas gratuitas, regiões e comportamento de budget/spending limit foram conferidos na documentação oficial em 15 de novembro de 2026. Criada configuração separada por serviço, desativada por padrão, com segredos ocultos da representação e limites conservadores de duração, páginas, registros de texto e concorrência. O plano está em `docs/azure-poc-plan.md`. Nenhum recurso foi provisionado e nenhuma chamada Azure foi realizada.
