@@ -362,6 +362,75 @@ def test_audio_uses_azure_transcriber_reports_pauses_and_reuses_result(
     assert transcriber.calls[0][1] == "audio/wav"
 
 
+def test_audio_only_mp4_replaces_simulation_with_azure_transcription(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    repository = MemoryAttachments()
+    patient_id = uuid4()
+    repository.add_patient("alice", patient_id)
+    transcriber = FakeSpeechTranscriber()
+    client = build_client(repository, tmp_path, transcriber=transcriber)
+    uploaded = client.post(
+        f"/api/patients/{patient_id}/attachments?filename=whatsapp.mp4",
+        content=MP4,
+        headers={"Content-Type": "video/mp4"},
+    ).json()
+    process_url = f"/api/patients/{patient_id}/attachments/{uploaded['id']}/process"
+    monkeypatch.setattr(
+        "tech_ai.services.attachment_service.audio_only_container",
+        lambda _path: False,
+    )
+
+    simulated = client.post(process_url)
+    monkeypatch.setattr(
+        "tech_ai.services.attachment_service.audio_only_container",
+        lambda _path: True,
+    )
+    transcribed = client.post(process_url)
+
+    assert simulated.json()["analysis"]["processor_name"] == "simulated-multimodal-processor"
+    analysis = transcribed.json()["analysis"]
+    assert analysis["status"] == "completed"
+    assert analysis["processor_name"] == "azure-speech-realtime"
+    assert "dificuldade" in analysis["summary"]
+    assert transcriber.calls[0][1] == "audio/mp4"
+
+
+def test_pose_analyzer_keeps_priority_over_audio_only_mp4(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    repository = MemoryAttachments()
+    patient_id = uuid4()
+    repository.add_patient("alice", patient_id)
+    analyzer = FakeVideoAnalyzer()
+    transcriber = FakeSpeechTranscriber()
+    client = build_client(
+        repository,
+        tmp_path,
+        transcriber=transcriber,
+        video_analyzer=analyzer,
+    )
+    monkeypatch.setattr(
+        "tech_ai.services.attachment_service.audio_only_container",
+        lambda _path: True,
+    )
+    uploaded = client.post(
+        f"/api/patients/{patient_id}/attachments?filename=exercicio.mp4",
+        content=MP4,
+        headers={"Content-Type": "video/mp4"},
+    ).json()
+
+    response = client.post(
+        f"/api/patients/{patient_id}/attachments/{uploaded['id']}/process"
+    )
+
+    assert response.json()["analysis"]["processor_name"] == "mediapipe-pose-sit-to-stand"
+    assert len(analyzer.calls) == 1
+    assert transcriber.calls == []
+
+
 def test_whatsapp_ogg_is_accepted_as_opus_audio(tmp_path: Path) -> None:
     repository = MemoryAttachments()
     patient_id = uuid4()

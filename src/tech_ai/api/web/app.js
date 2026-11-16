@@ -216,9 +216,10 @@ function renderAttachment(attachment) {
   const limitations = (analysis.limitations || [])
     .map((item) => `<li>${escapeHtml(item)}</li>`)
     .join("");
+  const simulated = analysis.processor_name === "simulated-multimodal-processor";
   const processAction = failed
     ? `<button type="button" class="retry-button" data-process-id="${attachment.id}">Tentar novamente</button>`
-    : !completed
+    : !completed || simulated
       ? `<button type="button" class="retry-button" data-process-id="${attachment.id}">Processar agora</button>`
       : "";
   const card = document.createElement("article");

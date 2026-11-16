@@ -14,7 +14,7 @@ from tech_ai.integrations.speech.client import SpeechTranscript, WordTiming
 from tech_ai.integrations.speech.conversion import transcription_audio
 
 _TICKS_PER_SECOND = 10_000_000
-_SUPPORTED_CONTENT_TYPES = {"audio/wav", "audio/mpeg", "audio/ogg"}
+_SUPPORTED_CONTENT_TYPES = {"audio/wav", "audio/mpeg", "audio/ogg", "audio/mp4"}
 _FICTIONAL_SSML = """<speak version="1.0" xml:lang="pt-BR">
 <voice name="pt-BR-FranciscaNeural">
 Paciente fictício em sessão de fisioterapia. Estou realizando o exercício de sentar e levantar.
@@ -133,13 +133,8 @@ class AzureSpeechTranscriber:
         speech_config.speech_recognition_language = self._language
         speech_config.output_format = speechsdk.OutputFormat.Detailed
         speech_config.request_word_level_timestamps()
-        audio_config = speechsdk.audio.AudioConfig(filename=str(path))
-        stream_owner = None
-
-        recognizer = speechsdk.SpeechRecognizer(
-            speech_config=speech_config,
-            audio_config=audio_config,
-        )
+        audio_config = None
+        recognizer = None
         done = threading.Event()
         texts: list[str] = []
         words: list[WordTiming] = []
@@ -168,19 +163,26 @@ class AzureSpeechTranscriber:
                 failure_codes.append(str(details.error_code))
             done.set()
 
-        recognizer.recognized.connect(recognized)
-        recognizer.canceled.connect(canceled)
-        recognizer.session_stopped.connect(lambda _event: done.set())
         timeout_seconds = self._max_audio_seconds + 30
+        finished = False
         try:
+            audio_config = speechsdk.audio.AudioConfig(filename=str(path))
+            recognizer = speechsdk.SpeechRecognizer(
+                speech_config=speech_config,
+                audio_config=audio_config,
+            )
+            recognizer.recognized.connect(recognized)
+            recognizer.canceled.connect(canceled)
+            recognizer.session_stopped.connect(lambda _event: done.set())
             recognizer.start_continuous_recognition_async().get()
             finished = done.wait(timeout_seconds)
         except Exception as error:
             raise SpeechTranscriptionError("O Azure Speech não iniciou a transcrição.") from error
         finally:
-            with suppress(Exception):
-                recognizer.stop_continuous_recognition_async().get()
-            del stream_owner
+            if recognizer is not None:
+                with suppress(Exception):
+                    recognizer.stop_continuous_recognition_async().get()
+            del recognizer, audio_config
         if not finished:
             raise SpeechTranscriptionError("A transcrição excedeu o tempo limite da POC.")
         if failure_codes:
