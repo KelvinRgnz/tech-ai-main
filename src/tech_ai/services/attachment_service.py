@@ -49,6 +49,12 @@ _EXTENSIONS: dict[str, tuple[AttachmentModality, str]] = {
     ".ogg": ("audio", "audio/ogg"),
     ".mp4": ("video", "video/mp4"),
 }
+_INPUT_KINDS = frozenset({"audio", "video", "file"})
+_INPUT_KIND_NOTES = {
+    "audio": "Tipo de entrada: áudio.",
+    "video": "Tipo de entrada: vídeo.",
+    "file": "Tipo de entrada: PDF ou imagem.",
+}
 _DECLARED_TYPES = {
     "application/pdf": "application/pdf",
     "image/jpeg": "image/jpeg",
@@ -89,12 +95,14 @@ class AttachmentService:
         original_name: str,
         declared_content_type: str,
         chunks: AsyncIterable[bytes],
+        kind: str | None = None,
     ) -> AttachmentView:
+        input_kind = _normalize_kind(kind)
         name, extension, expected_modality, expected_type = self._validate_metadata(
             original_name, declared_content_type
         )
         temporary = await self._storage.write_temporary(
-            chunks, max_bytes=_MAX_BYTES[expected_modality]
+            chunks, max_bytes=_MAX_BYTES[_size_modality(input_kind, expected_modality)]
         )
         try:
             detected_modality, detected_type = _detect_content(temporary.header)
@@ -102,6 +110,9 @@ class AttachmentService:
                 raise AttachmentValidationError(
                     "A extensão, o tipo declarado e o conteúdo real do arquivo não coincidem."
                 )
+            detected_modality, detected_type = _apply_input_kind(
+                input_kind, detected_modality, detected_type
+            )
             attachment_id = uuid4()
             analysis_id = uuid4()
             now = datetime.now(UTC)
@@ -114,7 +125,7 @@ class AttachmentService:
                 0,
                 None,
                 (),
-                ("Processamento ainda não iniciado.",),
+                _pending_limitations(input_kind),
                 None,
                 now,
                 None,
@@ -168,10 +179,10 @@ class AttachmentService:
                 attachment,
                 self._document_reader,
             )
-        if attachment.modality == "video" and self._video_analyzer is not None:
-            return self._process_video(owner, patient_id, attachment, self._video_analyzer)
+        explicit_video = "Tipo de entrada: vídeo." in attachment.analysis.limitations
         if (
             attachment.modality == "video"
+            and not explicit_video
             and transcriber is not None
             and audio_only_container(self._storage.resolve(attachment.storage_key))
         ):
@@ -182,6 +193,8 @@ class AttachmentService:
                 transcriber,
                 content_type="audio/mp4",
             )
+        if attachment.modality == "video" and self._video_analyzer is not None:
+            return self._process_video(owner, patient_id, attachment, self._video_analyzer)
         return self._process_simulated(owner, patient_id, attachment)
 
     def _process_video(
@@ -399,6 +412,16 @@ class AttachmentService:
         attachment: StoredAttachment,
         analysis: AttachmentAnalysis,
     ) -> AttachmentView:
+        choice = next(
+            (
+                item
+                for item in attachment.analysis.limitations
+                if item.startswith("Tipo de entrada:")
+            ),
+            None,
+        )
+        if choice is not None and choice not in analysis.limitations:
+            analysis = replace(analysis, limitations=(*analysis.limitations, choice))
         if not self._repository.complete_analysis(owner, patient_id, attachment.id, analysis):
             raise AttachmentNotFoundError("Anexo não encontrado.")
         return AttachmentView.from_stored(replace(attachment, analysis=analysis))
@@ -437,6 +460,53 @@ class AttachmentService:
                 "O tipo declarado não corresponde à extensão do arquivo."
             )
         return name, extension, expected[0], expected[1]
+
+
+def _normalize_kind(kind: str | None) -> str:
+    normalized = (kind or "").strip().casefold()
+    if normalized and normalized not in _INPUT_KINDS:
+        raise AttachmentValidationError(
+            "Tipo de entrada inválido. Escolha áudio, vídeo ou PDF."
+        )
+    return normalized
+
+
+def _size_modality(kind: str, expected: AttachmentModality) -> AttachmentModality:
+    if kind == "audio":
+        return "audio"
+    if kind == "video":
+        return "video"
+    if kind == "file":
+        return "image" if expected == "image" else "document"
+    return expected
+
+
+def _apply_input_kind(
+    kind: str, modality: AttachmentModality, content_type: str
+) -> tuple[AttachmentModality, str]:
+    if not kind:
+        return modality, content_type
+    if kind == "audio" and modality == "audio":
+        return modality, content_type
+    if kind == "audio" and content_type == "video/mp4":
+        return "audio", "audio/mp4"
+    if kind == "video" and modality == "video":
+        return modality, content_type
+    if kind == "file" and modality in {"document", "image"}:
+        return modality, content_type
+    expected = {
+        "audio": "Envie este arquivo em Áudio: WAV, MP3, OGG ou MP4 só com fala.",
+        "video": "Envie este arquivo em Vídeo: MP4 com imagem.",
+        "file": "Envie este arquivo em PDF: documento PDF, JPEG ou PNG.",
+    }[kind]
+    raise AttachmentValidationError(f"O arquivo não combina com o tipo escolhido. {expected}")
+
+
+def _pending_limitations(kind: str) -> tuple[str, ...]:
+    note = _INPUT_KIND_NOTES.get(kind)
+    if note is None:
+        return ("Processamento ainda não iniciado.",)
+    return ("Processamento ainda não iniciado.", note)
 
 
 def _detect_content(header: bytes) -> tuple[AttachmentModality, str]:

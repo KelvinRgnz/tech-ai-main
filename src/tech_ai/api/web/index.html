@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Tech AI · Assistente médico acadêmico</title>
-    <link rel="stylesheet" href="/static/styles.css?v=shell2" />
+    <link rel="stylesheet" href="/static/styles.css?v=shell3" />
   </head>
   <body class="is-locked">
     <div class="app" aria-hidden="true">
@@ -50,7 +50,7 @@
             </button>
             <button type="button" class="destination" data-go="attach">
               <span>Anexo</span>
-              <small>PDF, imagem, áudio ou vídeo</small>
+              <small>Áudio, vídeo ou PDF</small>
             </button>
           </div>
         </nav>
@@ -91,31 +91,31 @@
 
         <form class="composer" id="consult-form">
           <div class="chips" id="chips"></div>
-          <label class="sr-only" for="question">Pergunta médica</label>
-          <div class="composer-input-row">
-            <button
-              type="button"
-              class="attachment-button"
-              id="attachment-button"
-              title="Anexar PDF, imagem, áudio ou vídeo"
-              aria-label="Anexar arquivo"
-              disabled
-            >+</button>
-            <input
-              id="attachment-input"
-              type="file"
-              accept=".pdf,.jpg,.jpeg,.png,.wav,.mp3,.ogg,.mp4,application/pdf,image/jpeg,image/png,audio/wav,audio/mpeg,audio/ogg,video/mp4"
-              hidden
-            />
-            <textarea
-              id="question"
-              name="question"
-              rows="3"
-              required
-              disabled
-              placeholder="Quais são os sintomas da diabetes?"
-            ></textarea>
+          <div class="input-kinds" role="group" aria-label="Tipo de anexo">
+            <button type="button" class="kind-button" data-kind="audio" disabled>
+              <span>Áudio</span>
+              <small>Transcrever a fala</small>
+            </button>
+            <button type="button" class="kind-button" data-kind="video" disabled>
+              <span>Vídeo</span>
+              <small>Analisar o movimento</small>
+            </button>
+            <button type="button" class="kind-button" data-kind="file" disabled>
+              <span>PDF</span>
+              <small>Ler documento ou imagem</small>
+            </button>
           </div>
+          <p class="kind-hint">Escolha o tipo antes de enviar. O processamento segue essa escolha.</p>
+          <input id="attachment-input" type="file" hidden />
+          <label class="sr-only" for="question">Pergunta médica</label>
+          <textarea
+            id="question"
+            name="question"
+            rows="3"
+            required
+            disabled
+            placeholder="Quais são os sintomas da diabetes?"
+          ></textarea>
           <p class="attachment-feedback" id="attachment-feedback" aria-live="polite"></p>
           <div class="composer-row">
             <p class="composer-hint">Enter envia · Shift+Enter quebra a linha</p>
@@ -161,6 +161,6 @@
         <button type="submit" class="danger" value="confirm">Apagar histórico</button>
       </form>
     </dialog>
-    <script src="/static/app.js?v=shell4" type="module"></script>
+    <script src="/static/app.js?v=shell6" type="module"></script>
   </body>
 </html>

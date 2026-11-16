@@ -26,7 +26,7 @@ const patientForm = document.querySelector("#patient-form");
 const patientName = document.querySelector("#patient-name");
 const patientCreateButton = document.querySelector("#patient-create-button");
 const patientFeedback = document.querySelector("#patient-feedback");
-const attachmentButton = document.querySelector("#attachment-button");
+const kindButtons = document.querySelectorAll(".kind-button");
 const attachmentInput = document.querySelector("#attachment-input");
 const attachmentFeedback = document.querySelector("#attachment-feedback");
 const clearHistoryButton = document.querySelector("#clear-history");
@@ -53,7 +53,7 @@ function renderEmptyState(message = "Selecione ou cadastre um paciente fictício
         </button>
         <button type="button" class="destination light" data-go="attach">
           <span>Anexo</span>
-          <small>Enviar um arquivo</small>
+          <small>Áudio, vídeo ou PDF</small>
         </button>
       </div>
     </article>
@@ -186,10 +186,67 @@ function attachmentPreview(attachment) {
   if (attachment.modality === "image") {
     return `<img class="attachment-preview" src="${url}" alt="Prévia de ${escapeHtml(attachment.original_name)}" />`;
   }
-  if (attachment.modality === "audio") {
+  if (
+    attachment.modality === "audio" ||
+    attachment.analysis.processor_name.startsWith("azure-speech")
+  ) {
     return `<audio class="attachment-media" controls preload="metadata" src="${url}"></audio>`;
   }
   return `<video class="attachment-media" controls preload="none" src="${url}"></video>`;
+}
+
+const INPUT_KINDS = {
+  audio: {
+    accept: ".wav,.mp3,.ogg,.mp4,audio/wav,audio/mpeg,audio/ogg,audio/mp4,video/mp4",
+    extensions: ["wav", "mp3", "ogg", "mp4"],
+    sending: "Enviando como áudio para transcrição.",
+    mismatch: "Para áudio, envie WAV, MP3, OGG ou o MP4 de fala do WhatsApp.",
+  },
+  video: {
+    accept: ".mp4,video/mp4",
+    extensions: ["mp4"],
+    sending: "Enviando como vídeo para análise de movimento.",
+    mismatch: "Para vídeo, envie um MP4 com imagem.",
+  },
+  file: {
+    accept: ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png",
+    extensions: ["pdf", "jpg", "jpeg", "png"],
+    sending: "Enviando como PDF ou imagem para leitura.",
+    mismatch: "Para PDF ou imagem, envie PDF, JPEG ou PNG.",
+  },
+};
+
+const MODALITY_LABEL = {
+  audio: "Áudio",
+  video: "Vídeo",
+  document: "PDF",
+  image: "Imagem",
+};
+
+const MODALITY_ACTION = {
+  audio: "Transcrever a fala",
+  video: "Analisar o movimento",
+  document: "Ler o documento",
+  image: "Ler a imagem",
+};
+
+function inputPresentation(attachment) {
+  const processor = attachment.analysis.processor_name;
+  if (processor.startsWith("azure-speech")) {
+    return { label: "Áudio", action: "Transcrever a fala" };
+  }
+  if (processor === "mediapipe-pose-sit-to-stand") {
+    return { label: "Vídeo", action: "Analisar o movimento" };
+  }
+  if (processor === "azure-document-intelligence-read") {
+    return attachment.modality === "image"
+      ? { label: "Imagem", action: "Ler a imagem" }
+      : { label: "PDF", action: "Ler o documento" };
+  }
+  return {
+    label: MODALITY_LABEL[attachment.modality] || attachment.modality,
+    action: MODALITY_ACTION[attachment.modality] || "Processar o arquivo",
+  };
 }
 
 function renderAttachment(attachment) {
@@ -228,10 +285,10 @@ function renderAttachment(attachment) {
   card.innerHTML = `
     <div class="meta-row">
       <span class="badge ${completed ? "ok" : failed ? "warn" : "interview"}">${statusLabel}</span>
-      <span class="distance">${escapeHtml(attachment.modality.toUpperCase())}</span>
+      <span class="distance">${escapeHtml(inputPresentation(attachment).label)}</span>
     </div>
     <h3>${escapeHtml(attachment.original_name)}</h3>
-    <p class="attachment-size">${formatBytes(attachment.size_bytes)} · ${escapeHtml(attachment.content_type)}</p>
+    <p class="attachment-size">${escapeHtml(inputPresentation(attachment).action)} · ${formatBytes(attachment.size_bytes)}</p>
     ${attachmentPreview(attachment)}
     ${analysis.summary ? `<p>${escapeHtml(analysis.summary)}</p>` : ""}
     ${observations ? `<h4>Observações</h4><ul>${observations}</ul>` : ""}
@@ -251,7 +308,7 @@ function setComposerEnabled(enabled) {
   const available = enabled && signedIn && Boolean(activePatient);
   question.disabled = !available;
   sendButton.disabled = !available;
-  attachmentButton.disabled = !available;
+  for (const button of kindButtons) button.disabled = !available;
   clearHistoryButton.disabled = !available;
 }
 
@@ -278,7 +335,8 @@ function goTo(destination) {
     return;
   }
   if (destination === "attach") {
-    attachmentInput.click();
+    document.querySelector(".input-kinds")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    document.querySelector('.kind-button[data-kind="audio"]')?.focus();
     return;
   }
   question.focus();
@@ -490,9 +548,14 @@ patientForm.addEventListener("submit", async (event) => {
   }
 });
 
-function declaredType(file) {
-  if (file.type) return file.type;
-  const extension = file.name.toLowerCase().split(".").pop();
+function fileExtension(file) {
+  return file.name.toLowerCase().split(".").pop() || "";
+}
+
+function declaredType(file, kind) {
+  const extension = fileExtension(file);
+  if (kind === "audio" && extension === "mp4") return "video/mp4";
+  if (file.type && kind !== "audio") return file.type;
   return {
     pdf: "application/pdf",
     jpg: "image/jpeg",
@@ -530,22 +593,37 @@ async function processAttachment(attachmentId) {
   statusCopy.textContent = `Conversa de ${activePatient.display_name}.`;
 }
 
-attachmentButton.addEventListener("click", () => attachmentInput.click());
+for (const button of kindButtons) {
+  button.addEventListener("click", () => {
+    const kind = INPUT_KINDS[button.dataset.kind];
+    if (!kind || !activePatient) return;
+    attachmentInput.dataset.kind = button.dataset.kind;
+    attachmentInput.accept = kind.accept;
+    attachmentInput.click();
+  });
+}
 
 attachmentInput.addEventListener("change", async () => {
   const file = attachmentInput.files?.[0];
+  const kind = attachmentInput.dataset.kind;
+  const spec = INPUT_KINDS[kind];
   attachmentInput.value = "";
-  if (!file || !activePatient) return;
+  if (!file || !activePatient || !spec) return;
+  if (!spec.extensions.includes(fileExtension(file))) {
+    attachmentFeedback.textContent = spec.mismatch;
+    statusCopy.textContent = "O arquivo não combina com o tipo escolhido.";
+    return;
+  }
   if (transcript.querySelector(".empty-card")) transcript.innerHTML = "";
-  attachmentButton.disabled = true;
-  attachmentFeedback.textContent = `Enviando ${file.name}...`;
+  for (const button of kindButtons) button.disabled = true;
+  attachmentFeedback.textContent = spec.sending;
   statusCopy.textContent = "Validando e armazenando o anexo.";
   try {
     const uploaded = await requestJson(
-      `/api/patients/${activePatient.id}/attachments?filename=${encodeURIComponent(file.name)}`,
+      `/api/patients/${activePatient.id}/attachments?filename=${encodeURIComponent(file.name)}&kind=${kind}`,
       {
         method: "POST",
-        headers: { "Content-Type": declaredType(file) },
+        headers: { "Content-Type": declaredType(file, kind) },
         body: file,
       }
     );
@@ -555,7 +633,7 @@ attachmentInput.addEventListener("change", async () => {
   } catch (error) {
     showAttachmentError(error);
   } finally {
-    attachmentButton.disabled = !signedIn || !activePatient;
+    for (const button of kindButtons) button.disabled = !signedIn || !activePatient;
   }
 });
 

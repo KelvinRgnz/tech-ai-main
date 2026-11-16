@@ -397,7 +397,7 @@ def test_audio_only_mp4_replaces_simulation_with_azure_transcription(
     assert transcriber.calls[0][1] == "audio/mp4"
 
 
-def test_pose_analyzer_keeps_priority_over_audio_only_mp4(
+def test_audio_only_mp4_is_transcribed_even_when_pose_analyzer_exists(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -426,9 +426,123 @@ def test_pose_analyzer_keeps_priority_over_audio_only_mp4(
         f"/api/patients/{patient_id}/attachments/{uploaded['id']}/process"
     )
 
+    assert response.json()["analysis"]["processor_name"] == "azure-speech-realtime"
+    assert analyzer.calls == []
+    assert transcriber.calls[0][1] == "audio/mp4"
+
+
+def test_audio_kind_transcribes_whatsapp_mp4(tmp_path: Path) -> None:
+    repository = MemoryAttachments()
+    patient_id = uuid4()
+    repository.add_patient("alice", patient_id)
+    transcriber = FakeSpeechTranscriber()
+    client = build_client(repository, tmp_path, transcriber=transcriber)
+
+    uploaded = client.post(
+        f"/api/patients/{patient_id}/attachments?filename=whatsapp.mp4&kind=audio",
+        content=MP4,
+        headers={"Content-Type": "video/mp4"},
+    )
+    processed = client.post(
+        f"/api/patients/{patient_id}/attachments/{uploaded.json()['id']}/process"
+    )
+
+    assert uploaded.status_code == 201
+    assert uploaded.json()["modality"] == "audio"
+    assert uploaded.json()["content_type"] == "audio/mp4"
+    assert "Tipo de entrada: áudio." in uploaded.json()["analysis"]["limitations"]
+    analysis = processed.json()["analysis"]
+    assert analysis["processor_name"] == "azure-speech-realtime"
+    assert "Tipo de entrada: áudio." in analysis["limitations"]
+    assert transcriber.calls[0][1] == "audio/mp4"
+
+
+def test_video_kind_does_not_transcribe_an_audio_only_mp4(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    repository = MemoryAttachments()
+    patient_id = uuid4()
+    repository.add_patient("alice", patient_id)
+    transcriber = FakeSpeechTranscriber()
+    client = build_client(repository, tmp_path, transcriber=transcriber)
+    monkeypatch.setattr(
+        "tech_ai.services.attachment_service.audio_only_container",
+        lambda _path: True,
+    )
+
+    uploaded = client.post(
+        f"/api/patients/{patient_id}/attachments?filename=nota.mp4&kind=video",
+        content=MP4,
+        headers={"Content-Type": "video/mp4"},
+    )
+    processed = client.post(
+        f"/api/patients/{patient_id}/attachments/{uploaded.json()['id']}/process"
+    )
+
+    analysis = processed.json()["analysis"]
+    assert uploaded.json()["modality"] == "video"
+    assert analysis["processor_name"] == "simulated-multimodal-processor"
+    assert "Tipo de entrada: vídeo." in analysis["limitations"]
+    assert transcriber.calls == []
+
+
+def test_explicit_video_kind_uses_pose_even_without_a_video_stream(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    repository = MemoryAttachments()
+    patient_id = uuid4()
+    repository.add_patient("alice", patient_id)
+    analyzer = FakeVideoAnalyzer()
+    transcriber = FakeSpeechTranscriber()
+    client = build_client(
+        repository,
+        tmp_path,
+        transcriber=transcriber,
+        video_analyzer=analyzer,
+    )
+    monkeypatch.setattr(
+        "tech_ai.services.attachment_service.audio_only_container",
+        lambda _path: True,
+    )
+    uploaded = client.post(
+        f"/api/patients/{patient_id}/attachments?filename=escolha-video.mp4&kind=video",
+        content=MP4,
+        headers={"Content-Type": "video/mp4"},
+    ).json()
+
+    response = client.post(
+        f"/api/patients/{patient_id}/attachments/{uploaded['id']}/process"
+    )
+
     assert response.json()["analysis"]["processor_name"] == "mediapipe-pose-sit-to-stand"
     assert len(analyzer.calls) == 1
     assert transcriber.calls == []
+
+
+def test_file_kind_accepts_pdf_and_rejects_audio(tmp_path: Path) -> None:
+    repository = MemoryAttachments()
+    patient_id = uuid4()
+    repository.add_patient("alice", patient_id)
+    client = build_client(repository, tmp_path)
+
+    document = client.post(
+        f"/api/patients/{patient_id}/attachments?filename=laudo.pdf&kind=file",
+        content=PDF,
+        headers={"Content-Type": "application/pdf"},
+    )
+    audio = client.post(
+        f"/api/patients/{patient_id}/attachments?filename=relato.wav&kind=file",
+        content=WAV,
+        headers={"Content-Type": "audio/wav"},
+    )
+
+    assert document.status_code == 201
+    assert document.json()["modality"] == "document"
+    assert "Tipo de entrada: PDF ou imagem." in document.json()["analysis"]["limitations"]
+    assert audio.status_code == 422
+    assert "PDF" in audio.json()["detail"]
 
 
 def test_whatsapp_ogg_is_accepted_as_opus_audio(tmp_path: Path) -> None:
