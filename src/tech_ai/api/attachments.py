@@ -40,6 +40,7 @@ def attachment_router(
         patient_id: UUID,
         request: Request,
         filename: str = Query(min_length=1, max_length=255),
+        kind: str | None = Query(default=None, max_length=32),
         user: AuthUser = Depends(current_user),
     ) -> AttachmentView:
         try:
@@ -49,6 +50,7 @@ def attachment_router(
                 original_name=filename,
                 declared_content_type=request.headers.get("content-type", ""),
                 chunks=request.stream(),
+                kind=kind,
             )
         except Exception as error:
             raise map_error(error) from None
