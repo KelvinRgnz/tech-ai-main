@@ -37,4 +37,17 @@ def conversation_router(
         except (ConfigurationError, DatabaseConnectionError):
             raise HTTPException(503, "Histórico indisponível.") from None
 
+    @router.delete("/{patient_id}/messages")
+    def clear_messages(
+        patient_id: UUID,
+        user: AuthUser = Depends(current_user),
+    ) -> dict[str, int]:
+        try:
+            deleted = service_factory().clear_messages(user.username, patient_id)
+        except PatientNotFoundError:
+            raise HTTPException(404, "Paciente não encontrado.") from None
+        except (ConfigurationError, DatabaseConnectionError):
+            raise HTTPException(503, "Histórico indisponível.") from None
+        return {"deleted": deleted}
+
     return router

@@ -48,6 +48,17 @@ class MemoryConversations:
             :limit
         ]
 
+    def clear_messages(self, owner: str, patient_id: UUID) -> int | None:
+        patient = self.patients.get(patient_id)
+        if patient is None or patient[0] != owner:
+            return None
+        remaining = [
+            message for message in self.messages if message.conversation_id != patient[1]
+        ]
+        deleted = len(self.messages) - len(remaining)
+        self.messages = remaining
+        return deleted
+
 
 class Retrieval:
     def search(self, query: str, *, limit: int) -> tuple[KnowledgeSearchResult, ...]:
@@ -113,6 +124,36 @@ def test_history_and_consult_are_isolated_by_owner() -> None:
     )
     assert response.status_code == 404
     assert repository.messages == []
+
+
+def test_owner_can_clear_only_their_history() -> None:
+    repository = MemoryConversations()
+    patient_id = uuid4()
+    other_patient = uuid4()
+    repository.add_patient("alice", patient_id)
+    repository.add_patient("alice", other_patient)
+    client = build_client(repository)
+    login(client, "alice")
+    assert (
+        client.post(
+            "/api/consult", json={"question": "question", "patient_id": str(patient_id)}
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            "/api/consult", json={"question": "other", "patient_id": str(other_patient)}
+        ).status_code
+        == 200
+    )
+    cleared = client.delete(f"/api/patients/{patient_id}/messages")
+    assert cleared.status_code == 200
+    assert cleared.json() == {"deleted": 2}
+    assert client.get(f"/api/patients/{patient_id}/messages").json() == []
+    assert len(client.get(f"/api/patients/{other_patient}/messages").json()) == 2
+    login(client, "bob")
+    assert client.delete(f"/api/patients/{other_patient}/messages").status_code == 404
+    assert len(repository.messages) == 2
 
 
 def test_legacy_consult_without_patient_remains_available() -> None:

@@ -29,6 +29,9 @@ const patientFeedback = document.querySelector("#patient-feedback");
 const attachmentButton = document.querySelector("#attachment-button");
 const attachmentInput = document.querySelector("#attachment-input");
 const attachmentFeedback = document.querySelector("#attachment-feedback");
+const clearHistoryButton = document.querySelector("#clear-history");
+const clearDialog = document.querySelector("#clear-dialog");
+const clearCopy = document.querySelector("#clear-copy");
 
 let signedIn = false;
 let activePatient = null;
@@ -36,9 +39,30 @@ let activePatient = null;
 function renderEmptyState(message = "Selecione ou cadastre um paciente fictício para iniciar.") {
   transcript.innerHTML = `
     <article class="empty-card">
+      <p class="eyebrow">Próximo passo</p>
+      <h2>Decidir para onde ir</h2>
       <p>${escapeHtml(message)}</p>
+      <div class="go-grid">
+        <button type="button" class="destination light" data-go="consult">
+          <span>Consulta</span>
+          <small>Fazer uma pergunta</small>
+        </button>
+        <button type="button" class="destination light" data-go="patient">
+          <span>Paciente</span>
+          <small>Escolher ou criar</small>
+        </button>
+        <button type="button" class="destination light" data-go="attach">
+          <span>Anexo</span>
+          <small>Enviar um arquivo</small>
+        </button>
+      </div>
     </article>
   `;
+  syncSuggestions();
+}
+
+function syncSuggestions() {
+  chips.hidden = transcript.querySelector(".bubble") !== null;
 }
 
 function escapeHtml(value) {
@@ -124,10 +148,18 @@ function renderAssistant(payload) {
     <h3>${interview ? "Vamos entender melhor" : "Orientação acadêmica"}</h3>
     <p>${escapeHtml(answer)}</p>
     ${warnings ? `<ul class="warnings">${warnings}</ul>` : ""}
-    ${interview ? "" : `<h3>Fontes</h3><div class="sources">${renderSources(sources, citations)}</div>`}
+    ${
+      interview
+        ? ""
+        : `<details class="sources-fold">
+            <summary>Fontes (${sources.length})</summary>
+            <div class="sources">${renderSources(sources, citations)}</div>
+          </details>`
+    }
     <p class="disclaimer">${escapeHtml(payload.disclaimer || "")}</p>
   `;
   transcript.appendChild(card);
+  syncSuggestions();
 }
 
 function appendUser(text) {
@@ -135,6 +167,7 @@ function appendUser(text) {
   bubble.className = "bubble user";
   bubble.textContent = text;
   transcript.appendChild(bubble);
+  syncSuggestions();
 }
 
 function formatBytes(bytes) {
@@ -210,6 +243,7 @@ function renderAttachment(attachment) {
   card.querySelector("[data-process-id]")?.addEventListener("click", () => {
     processAttachment(attachment.id).catch(showAttachmentError);
   });
+  syncSuggestions();
 }
 
 function setComposerEnabled(enabled) {
@@ -217,6 +251,36 @@ function setComposerEnabled(enabled) {
   question.disabled = !available;
   sendButton.disabled = !available;
   attachmentButton.disabled = !available;
+  clearHistoryButton.disabled = !available;
+}
+
+function markDestination(destination) {
+  for (const button of document.querySelectorAll(".destinations [data-go]")) {
+    button.toggleAttribute("aria-current", button.dataset.go === destination);
+  }
+}
+
+function goTo(destination) {
+  markDestination(destination);
+  if (destination === "patient") {
+    document.querySelector("#patient-panel")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    (activePatient ? patientSelect : patientName).focus();
+    return;
+  }
+  if (!signedIn) {
+    showLogin("Entre para continuar.");
+    return;
+  }
+  if (!activePatient) {
+    patientFeedback.textContent = "Crie ou selecione um paciente para continuar.";
+    patientName.focus();
+    return;
+  }
+  if (destination === "attach") {
+    attachmentInput.click();
+    return;
+  }
+  question.focus();
 }
 
 function setBusy(isBusy) {
@@ -491,6 +555,43 @@ attachmentInput.addEventListener("change", async () => {
     showAttachmentError(error);
   } finally {
     attachmentButton.disabled = !signedIn || !activePatient;
+  }
+});
+
+document.addEventListener("click", (event) => {
+  const target = event.target instanceof Element ? event.target.closest("[data-go]") : null;
+  if (!target) return;
+  goTo(target.dataset.go || "consult");
+});
+
+clearHistoryButton.addEventListener("click", () => {
+  if (!activePatient || typeof clearDialog.showModal !== "function") return;
+  const attachments = transcript.querySelectorAll(".attachment-card").length;
+  const kept = attachments === 1
+    ? "1 anexo continua na conversa."
+    : attachments > 1
+      ? `${attachments} anexos continuam na conversa.`
+      : "Não há anexos nesta conversa.";
+  clearCopy.textContent = `As perguntas e respostas de ${activePatient.display_name} serão apagadas. ${kept}`;
+  clearDialog.showModal();
+});
+
+clearDialog.addEventListener("close", async () => {
+  if (clearDialog.returnValue !== "confirm" || !activePatient) return;
+  const patient = activePatient;
+  clearHistoryButton.disabled = true;
+  try {
+    const result = await requestJson(`/api/patients/${patient.id}/messages`, { method: "DELETE" });
+    await selectPatient(patient);
+    if (activePatient?.id === patient.id) {
+      statusCopy.textContent = result.deleted
+        ? `Histórico de ${patient.display_name} apagado. Os anexos foram mantidos.`
+        : `Não havia mensagens para apagar em ${patient.display_name}.`;
+    }
+  } catch (error) {
+    patientFeedback.textContent = error.message;
+    statusCopy.textContent = "Não foi possível apagar o histórico.";
+    clearHistoryButton.disabled = !signedIn || !activePatient;
   }
 });
 

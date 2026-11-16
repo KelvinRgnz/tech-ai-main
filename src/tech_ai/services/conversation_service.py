@@ -46,3 +46,9 @@ class ConversationService:
         if messages is None:
             raise PatientNotFoundError("Paciente não encontrado.")
         return messages
+
+    def clear_messages(self, owner: str, patient_id: UUID) -> int:
+        deleted = self._repository.clear_messages(owner, patient_id)
+        if deleted is None:
+            raise PatientNotFoundError("Paciente não encontrado.")
+        return deleted

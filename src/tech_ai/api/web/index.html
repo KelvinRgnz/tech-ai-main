@@ -4,25 +4,17 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Tech AI · Assistente médico acadêmico</title>
-    <link rel="stylesheet" href="/static/styles.css?v=documents1" />
+    <link rel="stylesheet" href="/static/styles.css?v=shell2" />
   </head>
   <body class="is-locked">
     <div class="app" aria-hidden="true">
       <aside class="rail">
-        <p class="eyebrow">Tech Challenge FIAP</p>
-        <h1>Assistente médico acadêmico</h1>
-        <p class="lead">
-          Consulta o MedQuAD indexado no Chroma Cloud e devolve evidências com
-          procedência. Não realiza diagnóstico nem substitui avaliação clínica.
-        </p>
-        <section class="notice" aria-label="Aviso de uso">
-          <strong>Uso acadêmico</strong>
-          <p>
-            Conteúdo experimental para fins acadêmicos; não substitui avaliação
-            médica.
-          </p>
-        </section>
-        <section class="patient-panel" aria-labelledby="patient-title">
+        <div class="rail-brand">
+          <p class="eyebrow">Tech Challenge FIAP</p>
+          <h1>Assistente médico acadêmico</h1>
+          <p class="lead">Evidências do MedQuAD, com fontes. Não substitui avaliação clínica.</p>
+        </div>
+        <section class="patient-panel" id="patient-panel" aria-labelledby="patient-title">
           <h2 id="patient-title">Paciente da conversa</h2>
           <label class="patient-field" for="patient-select">
             <span>Selecionar paciente fictício</span>
@@ -45,14 +37,30 @@
             <p class="patient-feedback" id="patient-feedback" aria-live="polite"></p>
           </form>
         </section>
-        <section>
-          <h2>Como perguntar</h2>
-          <ul class="hints">
-            <li>Pergunte em português; as evidências do MedQuAD são traduzidas na resposta.</li>
-            <li>Cada resposta lista fontes numeradas e a distância semântica.</li>
-            <li>O modo com modelo exige o extra <code>runtime</code>.</li>
-          </ul>
-        </section>
+        <nav class="destinations" aria-label="Para onde ir">
+          <h2>Para onde ir</h2>
+          <div class="go-grid">
+            <button type="button" class="destination" data-go="consult">
+              <span>Consulta</span>
+              <small>Perguntar ao conhecimento</small>
+            </button>
+            <button type="button" class="destination" data-go="patient">
+              <span>Paciente</span>
+              <small>Escolher ou criar</small>
+            </button>
+            <button type="button" class="destination" data-go="attach">
+              <span>Anexo</span>
+              <small>PDF, imagem, áudio ou vídeo</small>
+            </button>
+          </div>
+        </nav>
+        <details class="notice">
+          <summary>Uso acadêmico</summary>
+          <p>
+            Conteúdo experimental para fins acadêmicos; não substitui avaliação
+            médica.
+          </p>
+        </details>
       </aside>
 
       <main class="clinic">
@@ -68,9 +76,14 @@
               <option value="ask" disabled>Resposta com o modelo (verificando...)</option>
             </select>
           </label>
-          <div class="session" id="session-box" hidden>
-            <p class="session-user" id="session-user"></p>
-            <button type="button" class="ghost" id="logout-button">Sair</button>
+          <div class="clinic-actions">
+            <button type="button" class="danger-ghost" id="clear-history" disabled>
+              Limpar histórico
+            </button>
+            <div class="session" id="session-box" hidden>
+              <p class="session-user" id="session-user"></p>
+              <button type="button" class="ghost" id="logout-button">Sair</button>
+            </div>
           </div>
         </header>
 
@@ -137,6 +150,17 @@
         <button type="submit" id="login-button">Entrar</button>
       </form>
     </section>
-    <script src="/static/app.js?v=video2" type="module"></script>
+    <dialog class="clear-dialog" id="clear-dialog" aria-labelledby="clear-title">
+      <h2 id="clear-title">Apagar o histórico?</h2>
+      <p id="clear-copy">
+        As perguntas e respostas deste paciente serão apagadas. Anexos, como
+        vídeos e PDFs, continuam na conversa.
+      </p>
+      <form method="dialog" class="dialog-actions">
+        <button type="submit" class="ghost" value="cancel">Cancelar</button>
+        <button type="submit" class="danger" value="confirm">Apagar histórico</button>
+      </form>
+    </dialog>
+    <script src="/static/app.js?v=shell3" type="module"></script>
   </body>
 </html>

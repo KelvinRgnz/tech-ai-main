@@ -62,6 +62,23 @@ class PostgresConversationRepository:
                 )
                 return tuple(self._to_message(row) for row in cursor.fetchall())
 
+    def clear_messages(self, owner: str, patient_id: UUID) -> int | None:
+        with database_connection(self._settings) as connection:
+            ownership = connection.execute(
+                "SELECT c.id FROM tech_ai.conversations c "
+                "JOIN tech_ai.patients p ON p.id = c.patient_id "
+                "WHERE p.id = %s AND p.owner_username = %s",
+                (patient_id, owner),
+            ).fetchone()
+            if ownership is None:
+                return None
+            conversation_id = cast(UUID, ownership[0])
+            deleted = connection.execute(
+                "DELETE FROM tech_ai.messages WHERE conversation_id = %s",
+                (conversation_id,),
+            )
+            return deleted.rowcount
+
     @staticmethod
     def _to_message(row: dict[str, Any]) -> ConversationMessage:
         role = cast(MessageRole, row["role"])

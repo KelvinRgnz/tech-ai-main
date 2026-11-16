@@ -66,6 +66,32 @@ def test_list_checks_ownership_before_reading_messages(monkeypatch: pytest.Monke
     assert "read_only=on" in connect.call_args.kwargs["options"]
 
 
+def test_clear_deletes_messages_of_the_owned_conversation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, database = connection(monkeypatch)
+    patient_id = uuid4()
+    conversation_id = uuid4()
+    result = database.execute.return_value
+    result.fetchone.return_value = (conversation_id,)
+    result.rowcount = 4
+    repository = PostgresConversationRepository(DatabaseSettings(URL))
+    assert repository.clear_messages("alice", patient_id) == 4
+    delete_sql, delete_parameters = database.execute.call_args_list[1].args
+    assert "DELETE FROM tech_ai.messages" in delete_sql
+    assert "p.owner_username = %s" in database.execute.call_args_list[0].args[0]
+    assert delete_parameters == (conversation_id,)
+    assert "Question" not in delete_sql
+
+
+def test_clear_returns_none_without_ownership(monkeypatch: pytest.MonkeyPatch) -> None:
+    _, database = connection(monkeypatch)
+    database.execute.return_value.fetchone.return_value = None
+    repository = PostgresConversationRepository(DatabaseSettings(URL))
+    assert repository.clear_messages("bob", uuid4()) is None
+    assert database.execute.call_count == 1
+
+
 def test_list_returns_none_without_ownership(monkeypatch: pytest.MonkeyPatch) -> None:
     _, database = connection(monkeypatch)
     database.execute.return_value.fetchone.return_value = None
