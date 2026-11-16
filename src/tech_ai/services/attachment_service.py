@@ -22,6 +22,7 @@ from tech_ai.errors import (
 from tech_ai.integrations.documents.client import DocumentReader, OcrResult
 from tech_ai.integrations.language.client import TextAnalysis, TextAnalyzer
 from tech_ai.integrations.speech.client import SpeechTranscriber, SpeechTranscript
+from tech_ai.integrations.speech.conversion import audio_only_container
 from tech_ai.integrations.video.client import VideoMovementAnalysis, VideoMovementAnalyzer
 from tech_ai.models.attachment import (
     AttachmentAnalysis,
@@ -154,7 +155,8 @@ class AttachmentService:
 
     def process(self, owner: str, patient_id: UUID, attachment_id: UUID) -> AttachmentView:
         attachment = self._get(owner, patient_id, attachment_id)
-        if attachment.analysis.status == "completed":
+        simulated = attachment.analysis.processor_name == "simulated-multimodal-processor"
+        if attachment.analysis.status == "completed" and not simulated:
             return AttachmentView.from_stored(attachment)
         transcriber = self._audio_transcriber
         if attachment.modality == "audio" and transcriber is not None:
@@ -168,6 +170,18 @@ class AttachmentService:
             )
         if attachment.modality == "video" and self._video_analyzer is not None:
             return self._process_video(owner, patient_id, attachment, self._video_analyzer)
+        if (
+            attachment.modality == "video"
+            and transcriber is not None
+            and audio_only_container(self._storage.resolve(attachment.storage_key))
+        ):
+            return self._process_audio(
+                owner,
+                patient_id,
+                attachment,
+                transcriber,
+                content_type="audio/mp4",
+            )
         return self._process_simulated(owner, patient_id, attachment)
 
     def _process_video(
@@ -272,12 +286,13 @@ class AttachmentService:
         patient_id: UUID,
         attachment: StoredAttachment,
         transcriber: SpeechTranscriber,
+        content_type: str | None = None,
     ) -> AttachmentView:
         started = datetime.now(UTC)
         try:
             transcript = transcriber.transcribe(
                 self._storage.resolve(attachment.storage_key),
-                content_type=attachment.content_type,
+                content_type=content_type or attachment.content_type,
             )
         except SpeechTranscriptionError as error:
             finished = datetime.now(UTC)

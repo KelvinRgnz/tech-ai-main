@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import subprocess
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -21,6 +22,37 @@ def _ffmpeg_executable() -> str:
             "O conversor de áudio não está instalado. Execute: uv sync --extra azure"
         ) from error
     return cast(str, package.get_ffmpeg_exe())
+
+
+def _discard_temporary(path: Path) -> None:
+    """Remove the converted WAV even if Windows still holds it briefly."""
+    for _attempt in range(20):
+        try:
+            path.unlink(missing_ok=True)
+            return
+        except OSError:
+            time.sleep(0.05)
+
+
+def audio_only_container(path: Path) -> bool:
+    """True when ffmpeg sees an audio stream and no video stream."""
+    try:
+        completed = subprocess.run(  # noqa: S603 - executável vem do pacote instalado.
+            [
+                _ffmpeg_executable(),
+                "-nostdin",
+                "-hide_banner",
+                "-i",
+                str(path),
+            ],
+            check=False,
+            capture_output=True,
+            timeout=30,
+        )
+    except (ConfigurationError, OSError, subprocess.SubprocessError):
+        return False
+    details = completed.stderr.decode("utf-8", errors="replace")
+    return "Audio:" in details and "Video:" not in details
 
 
 @contextmanager
@@ -74,4 +106,4 @@ def transcription_audio(path: Path, *, content_type: str) -> Iterator[Path]:
             "Não foi possível executar a conversão local do áudio."
         ) from error
     finally:
-        converted.unlink(missing_ok=True)
+        _discard_temporary(converted)

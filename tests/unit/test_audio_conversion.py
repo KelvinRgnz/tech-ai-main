@@ -8,6 +8,7 @@ import pytest
 from tech_ai.errors import ConfigurationError, SpeechTranscriptionError
 from tech_ai.integrations.speech.conversion import (
     _ffmpeg_executable,
+    audio_only_container,
     transcription_audio,
 )
 
@@ -72,6 +73,93 @@ def test_failed_conversion_is_sanitized_and_removes_output(
     ):
         pass
 
+    assert list(tmp_path.glob("*.wav")) == []
+
+
+def test_audio_only_container_requires_audio_without_video(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "whatsapp.mp4"
+    source.write_bytes(b"ftyp")
+    seen: list[bytes] = []
+
+    def probe(command: list[str], **_options: object) -> subprocess.CompletedProcess[bytes]:
+        seen.append(b"probed")
+        stderr = b"Stream #0:0: Audio: aac\n" if command[-1].endswith("whatsapp.mp4") else b""
+        return subprocess.CompletedProcess(command, 1, b"", stderr)
+
+    monkeypatch.setattr(
+        "tech_ai.integrations.speech.conversion._ffmpeg_executable",
+        lambda: "bundled-ffmpeg",
+    )
+    monkeypatch.setattr("tech_ai.integrations.speech.conversion.subprocess.run", probe)
+
+    assert audio_only_container(source) is True
+    video = tmp_path / "exercicio.mp4"
+    video.write_bytes(b"ftyp")
+    monkeypatch.setattr(
+        "tech_ai.integrations.speech.conversion.subprocess.run",
+        lambda command, **_options: subprocess.CompletedProcess(
+            command,
+            1,
+            b"",
+            b"Stream #0:0: Video: h264\nStream #0:1: Audio: aac\n",
+        ),
+    )
+    assert audio_only_container(video) is False
+    assert seen
+
+
+def test_missing_converter_does_not_treat_container_as_audio(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "whatsapp.mp4"
+    source.write_bytes(b"ftyp")
+
+    def missing(_name: str) -> None:
+        raise ImportError("missing")
+
+    monkeypatch.setattr(
+        "tech_ai.integrations.speech.conversion.importlib.import_module",
+        missing,
+    )
+    assert audio_only_container(source) is False
+
+
+def test_locked_wav_is_removed_without_failing_the_caller(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "relato.mp3"
+    source.write_bytes(b"ID3")
+    real_unlink = Path.unlink
+    attempts = 0
+
+    def convert(command: list[str], **_options: object) -> subprocess.CompletedProcess[bytes]:
+        Path(command[-1]).write_bytes(b"RIFF\x00\x00\x00\x00WAVEpcm")
+        return subprocess.CompletedProcess(command, 0, b"", b"")
+
+    def locked_unlink(self: Path, missing_ok: bool = False) -> None:
+        nonlocal attempts
+        if self.suffix == ".wav" and attempts < 2:
+            attempts += 1
+            raise PermissionError("file in use")
+        real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(
+        "tech_ai.integrations.speech.conversion._ffmpeg_executable",
+        lambda: "bundled-ffmpeg",
+    )
+    monkeypatch.setattr("tech_ai.integrations.speech.conversion.subprocess.run", convert)
+    monkeypatch.setattr("tech_ai.integrations.speech.conversion.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr(Path, "unlink", locked_unlink)
+
+    with transcription_audio(source, content_type="audio/mpeg") as converted:
+        assert converted.read_bytes().startswith(b"RIFF")
+
+    assert attempts == 2
     assert list(tmp_path.glob("*.wav")) == []
 
 
