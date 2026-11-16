@@ -2,7 +2,9 @@
 
 Guia de evolução do assistente médico acadêmico para análise multimodal e monitoramento simulado de pacientes.
 
-**Estado:** anexos e Azure validados; foco atual nos requisitos obrigatórios de vídeo e anomalias.
+**Estado em 15/11/2026:** base multimodal, Azure, OCR, áudio e vídeo validados. O foco exclusivo
+agora é concluir detecção de anomalias, alertas, fusão multimodal e os entregáveis que sustentam a
+nota. Melhorias de produto e refinamentos comerciais ficam fora do caminho crítico.
 
 Este arquivo está na raiz versionada da aplicação e acompanha a evolução do desafio acadêmico.
 
@@ -37,6 +39,39 @@ O OCR real já entregue é um bônus útil para demonstrar Azure e texto documen
 correções, versionamento de OCR e extração clínica detalhada não são requisitos obrigatórios do
 PDF e ficam no backlog. A evolução de prescrições será demonstrada na Etapa 6 com dados sintéticos
 estruturados e comparáveis, sem depender de um editor documental de nível comercial.
+
+### Diretiva vigente: maximizar a nota da Fase 4
+
+O Tech Challenge vale 90% da nota das disciplinas da fase. A partir desta revisão, uma tarefa só
+entra no caminho crítico quando aumenta a cobertura de um requisito obrigatório ou produz uma
+evidência necessária para o relatório e o vídeo final.
+
+| Prioridade | Entrega | Decisão |
+| --- | --- | --- |
+| P0 | Anomalias em sinais vitais, evolução de prescrições e movimentação | Implementar uma demonstração sintética pequena, determinística e verificável |
+| P0 | Alertas automáticos com origem, evidência, horário e revisão | Implementar o fluxo completo até o painel do paciente |
+| P0 | Fusão de texto, áudio e vídeo | Demonstrar no mesmo paciente sem exigir evolução comercial do modelo generativo |
+| P0 | Relatório técnico e vídeo de até 15 minutos | Produzir matriz requisito → evidência e roteiro reproduzível |
+| P1 | Métricas acústicas adicionais para alterações vocais | Entregar ao menos uma medida objetiva e declarar os limites clínicos |
+| Backlog | Editor de OCR, armazenamento em nuvem, filas robustas, deploy e escala | Não implementar antes da entrega acadêmica |
+
+### Painel executivo das etapas
+
+| Etapa | Situação | Conclusão para a nota |
+| --- | --- | --- |
+| 0. Base e contratos | **Concluída** | Arquitetura, testes e contratos sustentam as demais evidências |
+| 1. Pacientes e anexos | **Concluída** | Upload, persistência, isolamento e recuperação foram demonstrados |
+| 2. Azure e consumo | **Concluída** | Speech, Language e Document Intelligence F0 foram validados com dados fictícios |
+| 3. OCR documental | **Concluída — bônus** | Fortalece texto/documentos, mas não substitui a evolução de prescrições da Etapa 6 |
+| 4. Áudio | **Parcialmente concluída** | STT, termos, sentimento e pausas funcionam; falta uma medida acústica objetiva de alteração vocal |
+| 5. Vídeo | **Concluída** | Cinco repetições, pausa e ciclo incompleto coincidiram com a anotação manual |
+| 6. Anomalias e alertas | **Não iniciada — bloqueador P0** | É requisito obrigatório central e a maior lacuna atual |
+| 7. Fusão multimodal | **Não iniciada — bloqueador P0** | Necessária para provar o objetivo de integrar texto, áudio e vídeo |
+| 8. Entrega acadêmica | **Em andamento — bloqueador P0** | Código existe; faltam relatório final, roteiro, vídeo e publicação |
+
+**Conclusão executiva:** a solução já possui boas demonstrações isoladas, mas ainda não atende por
+completo a diretiva. A próxima decisão correta não é polir OCR, vídeo ou interface; é entregar a
+Etapa 6 em um fluxo mínimo completo e usá-la para fechar as Etapas 7 e 8.
 
 ## 2. Base existente e limites arquiteturais
 
@@ -178,6 +213,11 @@ interface exibiu as frases-chave `sessão`, `exercício`, `cansaço`, `fisiotera
 de sentimento textual negativo com 100% de confiança e ressalvas clínicas. A detecção direta de
 silêncio no sinal e os cenários com ruído e múltiplos falantes continuam pendentes.
 
+**Conclusão atual:** cobertura parcial suficiente para demonstrar Azure Speech to Text, termos,
+sentimento e eventos temporais. Para reduzir risco de nota, ainda deve ser adicionada uma medida
+acústica objetiva simples (por exemplo, proporção de silêncio/tempo de fala), comparada com a
+anotação manual e apresentada como indicador experimental, nunca como diagnóstico.
+
 **Concluída quando:** a transcrição e os eventos temporais são demonstráveis, os serviços Azure exigidos estão integrados e a cobertura de alterações vocais está explicitamente avaliada ou registrada como limitação pendente.
 
 ### Etapa 5 — Vídeo de fisioterapia
@@ -223,6 +263,10 @@ Depende da etapa 1; utiliza eventos da etapa 5 quando disponíveis.
 - [ ] Evitar duplicação contínua do mesmo alerta e registrar sua resolução/revisão.
 - [ ] Exibir alertas no painel do paciente e manter histórico.
 
+**Escopo mínimo orientado à nota:** usar dados sintéticos pequenos e regras versionadas. Não é
+necessário construir uma plataforma hospitalar: basta demonstrar série normal e anômala, diferença
+entre duas prescrições, evento de movimentação e alerta rastreável no painel.
+
 **Concluída quando:** a reprodução gera os alertas esperados, uma mudança de prescrição aparece para revisão e o usuário consegue rastrear e revisar cada evento.
 
 ### Etapa 7 — Fusão multimodal e integração com o assistente
@@ -240,6 +284,11 @@ Depende dos resultados das etapas 4 a 6; o OCR complementar pode ser incluído s
 - [ ] Definir tratamento de dados contraditórios, ausentes ou temporalmente incompatíveis.
 - [ ] Demonstrar uma pergunta que combine pelo menos duas modalidades do mesmo paciente com rastreabilidade.
 
+**Escopo mínimo orientado à nota:** consolidar uma linha do tempo determinística do paciente com
+um documento, um áudio, um vídeo e os alertas da Etapa 6. A demonstração de fusão não deve
+ficar bloqueada pela qualidade do modelo generativo; os resultados dos processadores permanecem
+visíveis e rastreáveis.
+
 **Concluída quando:** o assistente utiliza achados reais do processamento, cita suas origens e não mistura pacientes; limitações do adaptador estão registradas com exemplos.
 
 ### Etapa 8 — Validação e entrega acadêmica
@@ -249,38 +298,50 @@ Depende das etapas anteriores.
 - [ ] Criar roteiro reproduzível com paciente fictício, documentos, áudio, vídeo e série de sinais vitais.
 - [ ] Medir erros de extração/transcrição, acerto de eventos, falsos alertas, latência e consumo quando aplicável.
 - [ ] Verificar falhas: arquivo incompatível, serviço indisponível, timeout, ausência de evidência e reinício durante processamento.
-- [ ] Executar `uv run ruff check .`, `uv run mypy` e `uv run pytest` dentro de `tech-ai-main`.
+- [x] Executar `uv run ruff check .`, `uv run mypy` e `uv run pytest` dentro de `tech-ai-main`.
 - [x] Fazer teste integrado real com Azure Speech usando volume controlado e dados fictícios.
-- [ ] Atualizar README com instalação, execução, configuração e reprodução dos exemplos.
+- [x] Atualizar README com instalação, execução, configuração e reprodução dos exemplos.
 - [ ] Produzir relatório técnico: fluxo multimodal, modelos, critérios, resultados, exemplos e limitações.
 - [ ] Preparar vídeo de até 15 minutos com áudio, vídeo, anomalias, Azure e fluxo final de alertas.
 - [ ] Conferir credenciais e dados antes de publicar materiais.
 - [ ] Publicar vídeo no YouTube ou Vimeo e preparar entrega do código mediante autorização do usuário.
 
+**Validação atual:** 236 testes aprovados, cobertura de 93,64%, Ruff, mypy e JavaScript
+validados. Esses checks comprovam consistência do código, mas não substituem os entregáveis
+ainda ausentes de anomalias, fusão, relatório e vídeo.
+
 **Concluída quando:** a demonstração é reproduzível e cada requisito possui evidência de implementação ou uma lacuna explicitamente reconhecida.
 
 ## 5. Matriz de aderência ao PDF
 
-| Requisito | Etapas | Evidência esperada |
-| --- | --- | --- |
-| Vídeo clínico e eventos fora do padrão | 5 | Vídeo de fisioterapia, detecções e relatório com instantes |
-| Áudio e alterações vocais | 4 | Transcrição, análise do sinal, avaliação e limitações |
-| Azure Speech to Text | 2 e 4 | Transcrição real pela integração |
-| Azure Text Analytics: termos e sentimentos | 2 e 4 | Resultado real vinculado à transcrição |
-| Anomalias em sinais vitais | 6 | Série reproduzida e alertas verificáveis |
-| Evolução de prescrições | 6 | Comparação temporal de prescrições sintéticas estruturadas do mesmo paciente |
-| Padrões de movimentação durante internação | 5 e 6 | Cenário simulado a detalhar; fisioterapia sozinha é cobertura parcial |
-| Alertas automáticos à equipe | 6 | Painel com origem, histórico e revisão |
-| Fusão de texto, áudio e vídeo | 7 | Pergunta com múltiplas modalidades e contexto do paciente |
-| Monitoramento em tempo real | 6 | Eventos emitidos durante reprodução; latência medida, sem alegar tempo real clínico |
-| Código e relatório técnico | 8 | Repositório e documentação reproduzível |
-| Vídeo de até 15 minutos | 8 | Demonstração e link de entrega |
+| Requisito obrigatório | Situação | Evidência/conclusão | Próxima ação |
+| --- | --- | --- | --- |
+| Vídeo clínico e eventos fora do padrão | **Atendido** | MP4 real, MediaPipe Pose, 5 repetições, pausa e ciclo incompleto com instantes | Usar a captura e os eventos no relatório/vídeo final |
+| Áudio de consulta e alterações vocais | **Parcial** | OGG real, transcrição, palavras temporizadas e pausas; sem classificador clínico de voz | Adicionar métrica acústica objetiva e limitação explícita |
+| Azure Speech to Text | **Atendido** | Transcrição real em `pt-BR` integrada e persistida | Preservar evidência para demonstração |
+| Azure Text Analytics: termos e sentimentos | **Atendido** | Frases-chave e sentimento reais vinculados à transcrição | Preservar evidência para demonstração |
+| Anomalias em sinais vitais | **Não atendido** | Nenhuma série/reprodução implementada | Etapa 6 P0 |
+| Evolução de prescrições | **Não atendido** | OCR isolado não compara evolução temporal | Comparar duas prescrições sintéticas estruturadas |
+| Padrões de movimentação na internação | **Parcial** | Evento de fisioterapia existe; monitoramento continuado não foi simulado | Incorporar o ciclo incompleto aos alertas da Etapa 6 |
+| Alertas automáticos à equipe | **Não atendido** | Não existe painel/histórico de alertas | Implementar origem, evidência, regra e revisão |
+| Fusão de texto, áudio e vídeo | **Não atendido** | Modalidades coexistem por paciente, mas ainda não formam uma visão combinada | Linha do tempo multimodal da Etapa 7 |
+| Monitoramento em tempo real | **Não atendido** | Não há reprodução temporal de sinais e alertas | Simulação acelerada, sem alegar tempo real clínico |
+| Código-fonte no repositório | **Atendido** | Branch versionada, testes automatizados e documentação | Manter a branch sincronizada |
+| Relatório técnico | **Não atendido** | Notas técnicas existem, mas o entregável final ainda não | Consolidar fluxo, modelos, resultados e exemplos |
+| Vídeo de até 15 minutos | **Não atendido** | Demonstrações foram testadas, mas não gravadas/publicadas | Produzir roteiro, gravação e link YouTube/Vimeo |
 
 ## 6. Próxima tarefa e acompanhamento
 
-**Próxima tarefa:** implementar a Etapa 5 com o vídeo fictício de fisioterapia já gravado:
-inspeção técnica, estimativa de pose, contagem de repetições, eventos fora do padrão e relatório
-com instantes verificáveis.
+**Próxima tarefa P0:** implementar a Etapa 6 em uma fatia vertical demonstrável:
+
+1. reproduzir uma série sintética curta de batimentos, pressão e oxigenação;
+2. detectar um ponto anômalo, uma alteração persistente e ausência de medição;
+3. comparar duas prescrições estruturadas e destacar medicamento, dose ou frequência alterada;
+4. converter esses eventos e o ciclo incompleto do vídeo em alertas automáticos;
+5. exibir origem, evidência, horário, regra e estado de revisão no painel do paciente.
+
+**Ordem posterior:** fechar a métrica acústica da Etapa 4, montar a linha do tempo multimodal da
+Etapa 7 e interromper novas funcionalidades para produzir relatório, roteiro e vídeo da Etapa 8.
 
 Para cada tarefa implementada, registrar:
 
